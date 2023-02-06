@@ -1,6 +1,7 @@
-espnet
+espnet==202211
+espnet_model_zoo==0.1.7
+torchaudio==0.12.1
+torch==1.12.1
 ffmpeg
 soundfile
 six
-torchaudio
-espnet_model_zoo
