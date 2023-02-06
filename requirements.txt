@@ -1,0 +1,6 @@
+espnet
+ffmpeg
+soundfile
+six
+torchaudio
+espnet_model_zoo
