@@ -1,7 +1,7 @@
-espnet==202211
-espnet_model_zoo==0.1.7
-torchaudio==0.12.1
-torch==1.12.1
+torch==1.13.1
+torchaudio==0.13.1
+git+https://github.com/speechcatcher-asr/espnet@stft_fix
+espnet_model_zoo
 ffmpeg
 soundfile
 six
