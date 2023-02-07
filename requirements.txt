@@ -6,3 +6,4 @@ ffmpeg
 soundfile
 six
 wavefile
+pyaudio
