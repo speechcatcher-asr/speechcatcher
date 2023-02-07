@@ -5,3 +5,4 @@ espnet_model_zoo
 ffmpeg
 soundfile
 six
+wavefile
