@@ -15,8 +15,8 @@ tag = "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train
 
 d=ModelDownloader(".cache/espnet")
 
-#device = "mps"
 device = 'cpu'
+#device = 'mps'
 
 speech2text = Speech2TextStreaming(**d.download_and_unpack(tag), token_type=None, bpemodel=None,
     maxlenratio=0.0, minlenratio=0.0, beam_size=10, ctc_weight=0.3, lm_weight=0.0,
@@ -71,6 +71,7 @@ def recognize(wavfile):
     nbests = [text for text, token, token_int, hyp in results]
     progress_output(nbests[0])
 
+# List all available microphones on this system
 def list_microphones():
     p = pyaudio.PyAudio()
     info = p.get_host_api_info_by_index(0)
@@ -80,15 +81,11 @@ def list_microphones():
         if (p.get_device_info_by_host_api_device_index(0, i).get('maxInputChannels')) > 0:
             print("Input Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
 
-def recognize_microphone(record_max_seconds=10,channels=1,recording_format=pyaudio.paInt16,samplerate=16000,chunksize=8192,save_debug_wav=True):
+# Stream audio data from a microphone to an espnet model
+# Chunksize should be atleats 6400 for a lookahead of 16 frames 
+def recognize_microphone(record_max_seconds=120, channels=1, recording_format=pyaudio.paInt16,
+                         samplerate=16000, chunksize=8192, save_debug_wav=False):
     list_microphones()
-    # Chunksize should be atleats 6400 for a lookahead of 16 frames 
-    CHUNK= 8192 #6400 #2048*3
-    FORMAT=pyaudio.paInt16
-    CHANNELS=1
-    RATE=16000
-    RECORD_SECONDS=60
-    p=pyaudio.PyAudio()
     blocks=[]
 
     stream = p.open(format=recording_format,channels=channels,rate=samplerate,input=True,frames_per_buffer=chunksize)
