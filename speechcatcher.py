@@ -88,7 +88,8 @@ def recognize_microphone(record_max_seconds=120, channels=1, recording_format=py
     list_microphones()
     blocks=[]
 
-    stream = p.open(format=recording_format,channels=channels,rate=samplerate,input=True,frames_per_buffer=chunksize)
+    p = pyaudio.PyAudio()
+    stream = p.open(format=recording_format, channels=channels, rate=samplerate, input=True, frames_per_buffer=chunksize)
     print(f'Model {tag} fully loaded, starting live transcription with your microphone.')
     for i in range(0,int(samplerate/chunksize*record_max_seconds)+1):
         data=stream.read(chunksize)
