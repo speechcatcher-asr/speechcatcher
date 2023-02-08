@@ -6,6 +6,10 @@ Our first model is for German, trained on 13k hours of speech. More models will 
 
 ## Installation instructions:
 
+Install portaudio
+
+    brew install portaudio
+
 Create a virtual environment:
 
     virtualenv -p python3.10 speechcatcher_env
