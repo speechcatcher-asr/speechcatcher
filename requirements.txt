@@ -1,6 +1,6 @@
 torch==1.13.1
 torchaudio==0.13.1
-python-ffmpeg
+ffmpeg-python
 git+https://github.com/speechcatcher-asr/espnet@stft_fix
 espnet_model_zoo
 soundfile
