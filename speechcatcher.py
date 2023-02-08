@@ -1,28 +1,43 @@
 # Note: the implementation follows the espnet example note book released here: https://github.com/espnet/notebook/blob/master/espnet2_streaming_asr_demo.ipynb
 # The notebook ( Apache-2.0 license ) was released with the clear intention of sharing how to use streaming models with EspNet2
 
+import os
 import sys
+import argparse
+import hashlib
 import espnet
 from espnet2.bin.asr_inference_streaming import Speech2TextStreaming
 from espnet_model_zoo.downloader import ModelDownloader
-import argparse
 import numpy as np
 import wave
 import pyaudio
 import wavefile
+import ffmpeg
 
-tag = "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024"
-
-d=ModelDownloader(".cache/espnet")
+tags = {
+"de_streaming_transformer_m" : "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024" }
 
 device = 'cpu'
 #device = 'mps'
 
-speech2text = Speech2TextStreaming(**d.download_and_unpack(tag), token_type=None, bpemodel=None,
-    maxlenratio=0.0, minlenratio=0.0, beam_size=10, ctc_weight=0.3, lm_weight=0.0,
-    penalty=0.0, nbest=1, device = device, disable_repetition_detection=True,
-    decoder_text_length_limit=0, encoded_feat_length_limit=0
-)
+def ensure_dir(f):
+    d = os.path.dirname(f)
+    if not os.path.exists(d):
+        os.makedirs(d)
+
+def load_model(tag, beam_size=10):
+    espnet_model_downloader = ModelDownloader(".cache/espnet")
+    return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag), token_type=None, bpemodel=None,
+        maxlenratio=0.0, minlenratio=0.0, beam_size=10, ctc_weight=0.3, lm_weight=0.0,
+        penalty=0.0, nbest=1, device = device, disable_repetition_detection=True,
+        decoder_text_length_limit=0, encoded_feat_length_limit=0
+    )
+
+def convert_inputfile(filename, outfile_wav):
+    return (
+        ffmpeg.input(filename)
+        .output(outfile_wav, acodec='pcm_s16le', ac=1, ar='16k')
+        .run(quiet=True, overwrite_output=True))
 
 prev_lines = 0
 def progress_output(text):
@@ -45,13 +60,17 @@ def progress_output(text):
     prev_lines = len(lines)
     sys.stderr.flush()
 
-def recognize(wavfile):
-    with wave.open(wavfile, 'rb') as wavfile:
-        ch=wavfile.getnchannels()
-        bits=wavfile.getsampwidth()
-        rate=wavfile.getframerate()
-        nframes=wavfile.getnframes()
-        buf = wavfile.readframes(-1)
+def recognize(speech2text, media_path):
+    ensure_dir('.tmp/')
+    wavfile_path = '.tmp/' + hashlib.sha1(args.inputfile.encode("utf-8")).hexdigest() + '.wav'
+    convert_inputfile(media_path, wavfile_path)
+
+    with wave.open(wavfile_path, 'rb') as wavfile_in:
+        ch=wavfile_in.getnchannels()
+        bits=wavfile_in.getsampwidth()
+        rate=wavfile_in.getframerate()
+        nframes=wavfile_in.getnframes()
+        buf = wavfile_in.readframes(-1)
         data=np.frombuffer(buf, dtype='int16')
     speech = data.astype(np.float16)/32767.0 #32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
     sim_chunk_length = 640*4 #400
@@ -71,6 +90,15 @@ def recognize(wavfile):
     nbests = [text for text, token, token_int, hyp in results]
     progress_output(nbests[0])
 
+    print('\n')
+
+    trans_file = media_path + '.txt'
+    with open(trans_file, 'w') as trans_file_out:
+        trans_file_out.write(nbests[0])
+
+    print(f'Wrote transcription to {trans_file}.')
+    os.remove(wavfile_path) 
+
 # List all available microphones on this system
 def list_microphones():
     p = pyaudio.PyAudio()
@@ -83,7 +111,7 @@ def list_microphones():
 
 # Stream audio data from a microphone to an espnet model
 # Chunksize should be atleats 6400 for a lookahead of 16 frames 
-def recognize_microphone(record_max_seconds=120, channels=1, recording_format=pyaudio.paInt16,
+def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, recording_format=pyaudio.paInt16,
                          samplerate=16000, chunksize=8192, save_debug_wav=False):
     list_microphones()
     blocks=[]
@@ -121,10 +149,25 @@ def recognize_microphone(record_max_seconds=120, channels=1, recording_format=py
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Speechcatcher utility to decode speech with speechcatcher espnet models.')
-    parser.add_argument('-i', '--input-file', dest='input_file', help='Input wav file', type=str, default = 'test1.wav')
-    parser.add_argument('-m', '--use-microphone', dest='microphone', help='Use microphone', type=int, default = 1)
+    parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription', action='store_true')
+    parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_m', help='Choose the model file', type=str)
+    parser.add_argument('-b','--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=10)
+    parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
     args = parser.parse_args()
 
-    #recognize("test5.wav")
-    recognize_microphone()
+    if args.model not in tags:
+        print(f'Model {args.model} is not a valid model!')
+        print('Options are:', ', '.join(tags.keys()))
+
+    tag = tags[args.model]
+    speech2text = load_model(tag=tag, beam_size=args.beamsize)
+
+    args = parser.parse_args()
+    
+    if args.live:
+        recognize_microphone(speech2text, tag)
+    elif args.inputfile != '':
+        recognize(speech2text, args.inputfile)
+    else:
+        parser.print_help()
