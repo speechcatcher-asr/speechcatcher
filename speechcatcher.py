@@ -73,7 +73,7 @@ def recognize(speech2text, media_path):
         buf = wavfile_in.readframes(-1)
         data=np.frombuffer(buf, dtype='int16')
     speech = data.astype(np.float16)/32767.0 #32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
-    sim_chunk_length = 640*4 #400
+    sim_chunk_length = 8192 #640*4 #400
     if sim_chunk_length > 0:
         for i in range(len(speech)//sim_chunk_length):
             results = speech2text(speech=speech[i*sim_chunk_length:(i+1)*sim_chunk_length], is_final=False)
