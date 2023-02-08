@@ -20,6 +20,10 @@ Then install the requirements:
    
 Done! You can then run speechcatcher with:
 
-    python3 speechcatcher.py
+    python3 speechcatcher.py media_file.mp4
+
+or to transcribe data live from your microphone:
+
+    python3 speechcatcher.py -l
 
 All required model files are downloaded automatically and placed into a ".cache" directory.
