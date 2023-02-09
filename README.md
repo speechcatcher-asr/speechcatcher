@@ -4,11 +4,13 @@ This is a Python utility to interface [Speechcatcher EspNet2 models](https://hug
 
 Our first model is for German, trained on 13k hours of speech. More models will follow - stay tuned!
 
+![Speechcatcher live recognition example](https://github.com/speechcatcher-asr/speechcatcher/raw/main/speechcatcher_de_live.gif)
+
 ## Installation instructions:
 
-Install portaudio
+Install portaudio and libsndfile, on Mac:
 
-    brew install portaudio
+    brew install portaudio libsndfile
 
 Create a virtual environment:
 
