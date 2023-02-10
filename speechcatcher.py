@@ -146,8 +146,6 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
     if save_debug_wav:
         print("Saving debug output...")
         wavefile.write("debug.wav", samplerate, np.concatenate(blocks, axis=None))
-    else:
-        print("Not writing debug wav output since --save_debug_wav is not set.")
 
 if __name__ == '__main__':
 
