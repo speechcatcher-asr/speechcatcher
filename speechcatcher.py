@@ -13,6 +13,7 @@ import wave
 import pyaudio
 import wavefile
 import ffmpeg
+import torch
 
 tags = {
 "de_streaming_transformer_m" : "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024" }
@@ -27,9 +28,10 @@ def ensure_dir(f):
 
 def load_model(tag, beam_size=10):
     espnet_model_downloader = ModelDownloader(".cache/espnet")
-    return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag), token_type=None, bpemodel=None,
+    return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag),
+        device=device, token_type=None, bpemodel=None,
         maxlenratio=0.0, minlenratio=0.0, beam_size=10, ctc_weight=0.3, lm_weight=0.0,
-        penalty=0.0, nbest=1, device = device, disable_repetition_detection=True,
+        penalty=0.0, nbest=1, disable_repetition_detection=True,
         decoder_text_length_limit=0, encoded_feat_length_limit=0
     )
 
@@ -45,7 +47,7 @@ def progress_output(text):
     lines=['']
     last_i=''
     for i in text:
-        if len(lines[-1]) > 120:
+        if len(lines[-1]) > 100:
             if last_i==' ' or last_i=='.' or last_i=='?' or last_i=='!': 
                 lines.append('')
         lines[-1] += i
@@ -119,6 +121,7 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
     p = pyaudio.PyAudio()
     stream = p.open(format=recording_format, channels=channels, rate=samplerate, input=True, frames_per_buffer=chunksize)
     print(f'Model {tag} fully loaded, starting live transcription with your microphone.')
+    
     for i in range(0,int(samplerate/chunksize*record_max_seconds)+1):
         data=stream.read(chunksize)
         data=np.frombuffer(data, dtype='int16')
@@ -162,6 +165,8 @@ if __name__ == '__main__':
 
     tag = tags[args.model]
     speech2text = load_model(tag=tag, beam_size=args.beamsize)
+
+    #speech2text = torch.compile(speech2text)
 
     args = parser.parse_args()
     
