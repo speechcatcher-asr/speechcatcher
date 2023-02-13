@@ -174,7 +174,7 @@ if __name__ == '__main__':
         print('Options are:', ', '.join(tags.keys()))
 
     tag = tags[args.model]
-    speech2text = load_model(tag=tag, beam_size=args.beamsize, args.quiet or args.progress)
+    speech2text = load_model(tag=tag, beam_size=args.beamsize, quiet=args.quiet or args.progress)
 
     args = parser.parse_args()
     
