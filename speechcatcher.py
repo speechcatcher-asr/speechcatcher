@@ -14,6 +14,7 @@ import pyaudio
 import wavefile
 import ffmpeg
 import torch
+from tqdm import tqdm
 
 tags = {
 "de_streaming_transformer_m" : "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024" }
@@ -26,9 +27,9 @@ def ensure_dir(f):
     if not os.path.exists(d):
         os.makedirs(d)
 
-def load_model(tag, beam_size=10):
+def load_model(tag, beam_size=10, quiet=False):
     espnet_model_downloader = ModelDownloader(".cache/espnet")
-    return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag),
+    return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag, quiet=quiet),
         device=device, token_type=None, bpemodel=None,
         maxlenratio=0.0, minlenratio=0.0, beam_size=10, ctc_weight=0.3, lm_weight=0.0,
         penalty=0.0, nbest=1, disable_repetition_detection=True,
@@ -62,7 +63,11 @@ def progress_output(text):
     prev_lines = len(lines)
     sys.stderr.flush()
 
-def recognize(speech2text, media_path):
+# using the model in 'speech2text', transcribe the path in 'media_path'
+# quiet mode: don't output partial transcriptions
+# progress mode: output transcription progress
+
+def recognize(speech2text, media_path, quiet=False, progress=False):
     ensure_dir('.tmp/')
     wavfile_path = '.tmp/' + hashlib.sha1(args.inputfile.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
@@ -74,18 +79,23 @@ def recognize(speech2text, media_path):
         nframes=wavfile_in.getnframes()
         buf = wavfile_in.readframes(-1)
         data=np.frombuffer(buf, dtype='int16')
+    
     speech = data.astype(np.float16)/32767.0 #32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
     sim_chunk_length = 8192 #640*4 #400
+    speech_len = len(speech)
+
     if sim_chunk_length > 0:
-        for i in range(len(speech)//sim_chunk_length):
+        for i in tqdm(range(speech_len//sim_chunk_length), disable= not progress):
             results = speech2text(speech=speech[i*sim_chunk_length:(i+1)*sim_chunk_length], is_final=False)
             if results is not None and len(results) > 0:
                 nbests = [text for text, token, token_int, hyp in results]
                 text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
-                progress_output(nbests[0])
+                if not (quiet or progress):
+                    progress_output(nbests[0])
             else:
-                progress_output("")
-            
+                if not (quiet or progress):
+                    progress_output("")
+
         results = speech2text(speech[(i+1)*sim_chunk_length:len(speech)], is_final=True)
     else:
         results = speech2text(speech, is_final=True)
@@ -153,6 +163,8 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription', action='store_true')
     parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_m', help='Choose the model file', type=str)
     parser.add_argument('-b','--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=10)
+    parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file', action='store_true')
+    parser.add_argument('--progress', dest='progress', help='Show progress when transcribing a media file', action='store_true')
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
     args = parser.parse_args()
@@ -162,15 +174,13 @@ if __name__ == '__main__':
         print('Options are:', ', '.join(tags.keys()))
 
     tag = tags[args.model]
-    speech2text = load_model(tag=tag, beam_size=args.beamsize)
-
-    #speech2text = torch.compile(speech2text)
+    speech2text = load_model(tag=tag, beam_size=args.beamsize, args.quiet or args.progress)
 
     args = parser.parse_args()
     
     if args.live:
         recognize_microphone(speech2text, tag)
     elif args.inputfile != '':
-        recognize(speech2text, args.inputfile)
+        recognize(speech2text, args.inputfile, quiet=args.quiet, progress=args.progress)
     else:
         parser.print_help()
