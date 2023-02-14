@@ -33,3 +33,14 @@ or to transcribe data live from your microphone:
     python3 speechcatcher.py -l
 
 All required model files are downloaded automatically and placed into a ".cache" directory.
+
+
+## Sponsors
+
+Speechcatcher is gracefully funded by
+
+<a href="https://media-tech-lab.com">Media Tech Lab by Media Lab Bayern</a> (<a href="https://github.com/media-tech-lab">@media-tech-lab</a>)
+
+<a href="https://media-tech-lab.com">
+    <img src="https://raw.githubusercontent.com/media-tech-lab/.github/main/assets/mtl-powered-by.png" width="240" title="Media Tech Lab powered by logo">
+</a>
