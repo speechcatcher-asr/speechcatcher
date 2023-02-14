@@ -22,11 +22,13 @@ tags = {
 device = 'cpu'
 #device = 'mps'
 
+# ensure that the directory for the path f exists
 def ensure_dir(f):
     d = os.path.dirname(f)
     if not os.path.exists(d):
         os.makedirs(d)
 
+# Load the espnet model with the given tag
 def load_model(tag, beam_size=10, quiet=False):
     espnet_model_downloader = ModelDownloader(".cache/espnet")
     return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag, quiet=quiet),
@@ -36,15 +38,26 @@ def load_model(tag, beam_size=10, quiet=False):
         decoder_text_length_limit=0, encoded_feat_length_limit=0
     )
 
+# Convert input file to 16 kHz mono
 def convert_inputfile(filename, outfile_wav):
     return (
         ffmpeg.input(filename)
         .output(outfile_wav, acodec='pcm_s16le', ac=1, ar='16k')
         .run(quiet=True, overwrite_output=True))
 
-prev_lines = 0
-def progress_output(text):
-    global prev_lines
+# Uses ANSI esc codes to delete previous lines. Resets the cursor to the beginning of an empty first line.
+# see https://stackoverflow.com/questions/19596750/is-there-a-way-to-clear-your-printed-text-in-python
+# and also "Everything you never wanted to know about ANSI escape codes"
+# https://notes.burke.libbey.me/ansi-escape-codes/
+
+def delete_multiple_lines(n=1):
+    """Delete the last n lines in ."""
+    for _ in range(n):
+        sys.stdout.write("\x1b[2K")  # delete the last line
+        sys.stdout.write("\x1b[1A")  # cursor up one line
+    sys.stdout.write('\n\r')
+
+def progress_output(text, prev_lines = 0):
     lines=['']
     last_i=''
     for i in text:
@@ -53,15 +66,14 @@ def progress_output(text):
                 lines.append('')
         lines[-1] += i
         last_i = i 
-    for i,line in enumerate(lines):
-        if i == prev_lines:
-            sys.stderr.write('\n\r')
-        else:
-            sys.stderr.write('\r\033[B\033[K')
-        sys.stderr.write(line)
+
+    delete_multiple_lines(n=prev_lines)
+    sys.stdout.write('\n'.join(lines))
 
     prev_lines = len(lines)
-    sys.stderr.flush()
+    sys.stdout.flush()
+
+    return prev_lines
 
 # using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
@@ -84,6 +96,8 @@ def recognize(speech2text, media_path, quiet=False, progress=False):
     sim_chunk_length = 8192 #640*4 #400
     speech_len = len(speech)
 
+    prev_lines = 0
+
     if sim_chunk_length > 0:
         for i in tqdm(range(speech_len//sim_chunk_length), disable= not progress):
             results = speech2text(speech=speech[i*sim_chunk_length:(i+1)*sim_chunk_length], is_final=False)
@@ -91,16 +105,16 @@ def recognize(speech2text, media_path, quiet=False, progress=False):
                 nbests = [text for text, token, token_int, hyp in results]
                 text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
                 if not (quiet or progress):
-                    progress_output(nbests[0])
+                    prev_lines = progress_output(nbests[0], prev_lines)
             else:
                 if not (quiet or progress):
-                    progress_output("")
+                    prev_lines = progress_output("", prev_lines)
 
         results = speech2text(speech[(i+1)*sim_chunk_length:len(speech)], is_final=True)
     else:
         results = speech2text(speech, is_final=True)
     nbests = [text for text, token, token_int, hyp in results]
-    progress_output(nbests[0])
+    prev_lines = progress_output(nbests[0], prev_lines)
 
     print('\n')
 
@@ -131,7 +145,11 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
     p = pyaudio.PyAudio()
     stream = p.open(format=recording_format, channels=channels, rate=samplerate, input=True, frames_per_buffer=chunksize)
     print(f'Model {tag} fully loaded, starting live transcription with your microphone.')
-    
+
+    n_best_lens = []
+    finalize_update_iters = 10
+    prev_lines = 0
+
     for i in range(0,int(samplerate/chunksize*record_max_seconds)+1):
         data=stream.read(chunksize)
         data=np.frombuffer(data, dtype='int16')
@@ -141,16 +159,38 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
         if i==int(samplerate/chunksize*record_max_seconds):
             results = speech2text(speech=data, is_final=True)
             break
-        results = speech2text(speech=data, is_final=False)
+
+        # Simple endpointing: Here we determine if no update happend in the last finalize_update_iters iterations
+        # by checking the n (finalize_update_iters) lengths of the partial text output.
+        # If all n previous lengths are the same, we finalize the ASR output and start a new utterance.
+
+        if len(n_best_lens) < finalize_update_iters:
+            finalize_iteration = False
+        else:
+            if all(x == n_best_lens[-1] for x in n_best_lens[-10:]):
+                finalize_iteration = True
+                n_best_lens = []
+            else:
+                finalize_iteration = False     
+
+        results = speech2text(speech=data, is_final=finalize_iteration)
+
         if results is not None and len(results) > 0:
             nbests = [text for text, token, token_int, hyp in results]
+            nbest_len = len(nbests[0])
+            n_best_lens += [nbest_len]
+
             text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
-            progress_output(nbests[0])
+            prev_lines = progress_output(nbests[0], prev_lines)
         else:
-            progress_output("")
+            prev_lines = progress_output("", prev_lines)
+
+        if finalize_iteration:
+            sys.stderr.write('\n')
+            prev_lines = 0
 
     nbests = [text for text, token, token_int, hyp in results]
-    progress_output(nbests[0])
+    prev_lines = progress_output(nbests[0], prev_lines)
 
     # Write debug wav as output file (will only be executed after shutdown)
     if save_debug_wav:
