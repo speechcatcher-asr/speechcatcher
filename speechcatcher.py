@@ -141,7 +141,7 @@ def list_microphones():
 # Chunksize should be atleats 6400 for a lookahead of 16 frames 
 def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, recording_format=pyaudio.paInt16,
                          samplerate=16000, chunksize=8192, save_debug_wav=False, exception_on_pyaudio_overflow=True,
-                         finalize_update_iters=5):
+                         finalize_update_iters=6):
     list_microphones()
     blocks=[]
 
