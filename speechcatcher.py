@@ -11,10 +11,12 @@ from espnet_model_zoo.downloader import ModelDownloader
 import numpy as np
 import wave
 import pyaudio
-import wavefile
+from scipy.io import wavfile
 import ffmpeg
 import torch
 from tqdm import tqdm
+
+from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 
 tags = {
 "de_streaming_transformer_m" : "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024" }
@@ -138,7 +140,8 @@ def list_microphones():
 # Stream audio data from a microphone to an espnet model
 # Chunksize should be atleats 6400 for a lookahead of 16 frames 
 def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, recording_format=pyaudio.paInt16,
-                         samplerate=16000, chunksize=8192, save_debug_wav=False):
+                         samplerate=16000, chunksize=8192, save_debug_wav=False, exception_on_pyaudio_overflow=True,
+                         finalize_update_iters=5):
     list_microphones()
     blocks=[]
 
@@ -147,64 +150,77 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
     print(f'Model {tag} fully loaded, starting live transcription with your microphone.')
 
     n_best_lens = []
-    finalize_update_iters = 10
     prev_lines = 0
+    
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        data_future = executor.submit(stream.read, chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
+        for i in range(0,int(samplerate/chunksize*record_max_seconds)+1):
+            executor.submit
 
-    for i in range(0,int(samplerate/chunksize*record_max_seconds)+1):
-        data=stream.read(chunksize)
-        data=np.frombuffer(data, dtype='int16')
-        if save_debug_wav:
-            blocks.append(data)
-        data=data.astype(np.float16)/32767.0 #32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
-        if i==int(samplerate/chunksize*record_max_seconds):
-            results = speech2text(speech=data, is_final=True)
-            break
+            data = data_future.result(timeout=2)
+            data_future = executor.submit(stream.read, chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
 
-        # Simple endpointing: Here we determine if no update happend in the last finalize_update_iters iterations
-        # by checking the n (finalize_update_iters) lengths of the partial text output.
-        # If all n previous lengths are the same, we finalize the ASR output and start a new utterance.
+            data=np.frombuffer(data, dtype='int16')
+            if save_debug_wav:
+                blocks.append(data)
+            
+            #32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
+            data=data.astype(np.float16)/32767.0
+            if i==int(samplerate/chunksize*record_max_seconds):
+                results = speech2text(speech=data, is_final=True)
+                break
 
-        if len(n_best_lens) < finalize_update_iters:
-            finalize_iteration = False
-        else:
-            if all(x == n_best_lens[-1] for x in n_best_lens[-10:]):
-                finalize_iteration = True
-                n_best_lens = []
+            # Simple endpointing: Here we determine if no update happend in the last finalize_update_iters iterations
+            # by checking the n (finalize_update_iters) lengths of the partial text output.
+            # If all n previous lengths are the same, we finalize the ASR output and start a new utterance.
+
+            if len(n_best_lens) < finalize_update_iters:
+                finalize_iteration = False
             else:
-                finalize_iteration = False     
+                if all(x == n_best_lens[-1] for x in n_best_lens[-10:]):
+                    finalize_iteration = True
+                    n_best_lens = []
+                else:
+                    finalize_iteration = False     
 
-        results = speech2text(speech=data, is_final=finalize_iteration)
+            results = speech2text(speech=data, is_final=finalize_iteration)
 
-        if results is not None and len(results) > 0:
-            nbests = [text for text, token, token_int, hyp in results]
-            nbest_len = len(nbests[0])
-            n_best_lens += [nbest_len]
+            if results is not None and len(results) > 0:
+                nbests = [text for text, token, token_int, hyp in results]
+                nbest_len = len(nbests[0])
+                n_best_lens += [nbest_len]
 
-            text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
-            prev_lines = progress_output(nbests[0], prev_lines)
-        else:
-            prev_lines = progress_output("", prev_lines)
+                text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
+                prev_lines = progress_output(nbests[0], prev_lines)
+            else:
+                prev_lines = progress_output("", prev_lines)
 
-        if finalize_iteration:
-            sys.stderr.write('\n')
-            prev_lines = 0
+            if finalize_iteration:
+                sys.stderr.write('\n')
+                prev_lines = 0
 
-    nbests = [text for text, token, token_int, hyp in results]
-    prev_lines = progress_output(nbests[0], prev_lines)
+        nbests = [text for text, token, token_int, hyp in results]
+        prev_lines = progress_output(nbests[0], prev_lines)
 
     # Write debug wav as output file (will only be executed after shutdown)
     if save_debug_wav:
-        print("Saving debug output...")
-        wavefile.write("debug.wav", samplerate, np.concatenate(blocks, axis=None))
+        print("\nSaving debug output...")
+        wavfile.write("debug.wav", samplerate, np.concatenate(blocks, axis=None))
+
+    print("\nMaximum recording time reached, exiting.")
 
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser(description='Speechcatcher utility to decode speech with speechcatcher espnet models.')
     parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription', action='store_true')
+    parser.add_argument('-t', '--max-record-time', dest='max_record_time', help='Maximum record time in seconds (live transcription).', type=float, default=120)
     parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_m', help='Choose the model file', type=str)
+    parser.add_argument('--lang', dest='language', default='', help='Explicity set language, default is empty = deduct languagefrom model tag', type=str)
     parser.add_argument('-b','--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=10)
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file', action='store_true')
     parser.add_argument('--progress', dest='progress', help='Show progress when transcribing a media file', action='store_true')
+    parser.add_argument('--save-debug-wav', dest='save_debug_wav', help='Save recording to debug.wav, only applicable to live decoding', action='store_true')
+
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
     args = parser.parse_args()
@@ -219,7 +235,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     if args.live:
-        recognize_microphone(speech2text, tag)
+        recognize_microphone(speech2text, tag, record_max_seconds=args.max_record_time, save_debug_wav=args.save_debug_wav)
     elif args.inputfile != '':
         recognize(speech2text, args.inputfile, quiet=args.quiet, progress=args.progress)
     else:
