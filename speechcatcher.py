@@ -17,12 +17,10 @@ import torch
 from tqdm import tqdm
 
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
+from simple_endpointing import segment_wav 
 
 tags = {
 "de_streaming_transformer_m" : "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024" }
-
-device = 'cpu'
-#device = 'mps'
 
 # ensure that the directory for the path f exists
 def ensure_dir(f):
@@ -31,7 +29,7 @@ def ensure_dir(f):
         os.makedirs(d)
 
 # Load the espnet model with the given tag
-def load_model(tag, beam_size=10, quiet=False):
+def load_model(tag, device='cpu' ,beam_size=10, quiet=False):
     espnet_model_downloader = ModelDownloader(".cache/espnet")
     return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag, quiet=quiet),
         device=device, token_type=None, bpemodel=None,
@@ -215,6 +213,7 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription', action='store_true')
     parser.add_argument('-t', '--max-record-time', dest='max_record_time', help='Maximum record time in seconds (live transcription).', type=float, default=120)
     parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_m', help='Choose the model file', type=str)
+    parser.add_argument('-d', '--device' dest='device', default='cpu', help="Computation device. Either 'cpu' or 'cuda'. Note: mac m1 / mps support isn't available yet.")    
     parser.add_argument('--lang', dest='language', default='', help='Explicity set language, default is empty = deduct languagefrom model tag', type=str)
     parser.add_argument('-b','--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=10)
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file', action='store_true')
@@ -230,7 +229,7 @@ if __name__ == '__main__':
         print('Options are:', ', '.join(tags.keys()))
 
     tag = tags[args.model]
-    speech2text = load_model(tag=tag, beam_size=args.beamsize, quiet=args.quiet or args.progress)
+    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=args.quiet or args.progress)
 
     args = parser.parse_args()
     
