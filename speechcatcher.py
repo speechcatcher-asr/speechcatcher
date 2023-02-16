@@ -98,6 +98,9 @@ def recognize(speech2text, media_path, quiet=False, progress=False):
 
     prev_lines = 0
 
+    segments = segment_wav(wavfile_path)
+    print(segments)
+
     if sim_chunk_length > 0:
         for i in tqdm(range(speech_len//sim_chunk_length), disable= not progress):
             results = speech2text(speech=speech[i*sim_chunk_length:(i+1)*sim_chunk_length], is_final=False)
@@ -213,7 +216,7 @@ if __name__ == '__main__':
     parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription', action='store_true')
     parser.add_argument('-t', '--max-record-time', dest='max_record_time', help='Maximum record time in seconds (live transcription).', type=float, default=120)
     parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_m', help='Choose the model file', type=str)
-    parser.add_argument('-d', '--device' dest='device', default='cpu', help="Computation device. Either 'cpu' or 'cuda'. Note: mac m1 / mps support isn't available yet.")    
+    parser.add_argument('-d', '--device', dest='device', default='cpu', help="Computation device. Either 'cpu' or 'cuda'. Note: mac m1 / mps support isn't available yet.")    
     parser.add_argument('--lang', dest='language', default='', help='Explicity set language, default is empty = deduct languagefrom model tag', type=str)
     parser.add_argument('-b','--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=10)
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file', action='store_true')
