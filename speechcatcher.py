@@ -92,6 +92,8 @@ def recognize(speech2text, media_path, quiet=False, progress=False):
         buf = wavfile_in.readframes(-1)
         data=np.frombuffer(buf, dtype='int16')
     
+    assert(rate==16000)
+
     speech = data.astype(np.float16)/32767.0 #32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
     sim_chunk_length = 8192 #640*4 #400
     speech_len = len(speech)
@@ -100,30 +102,46 @@ def recognize(speech2text, media_path, quiet=False, progress=False):
 
     segments = segment_wav(wavfile_path)
     print(segments)
+    utterance_text = ''
+    complete_text = ''
 
     if sim_chunk_length > 0:
         for i in tqdm(range(speech_len//sim_chunk_length), disable= not progress):
-            results = speech2text(speech=speech[i*sim_chunk_length:(i+1)*sim_chunk_length], is_final=False)
+            # first calculate in seconds, then mutiply with 100 to get the framepos (100 frames in one second.)
+            frame_pos = ((i+1)*sim_chunk_length / rate ) * 100.
+            if len(segments) > 0 and frame_pos >= segments[0][1]:
+                is_final = True
+                segments = segments[1:]
+            else:
+                is_final = False
+            results = speech2text(speech=speech[i*sim_chunk_length:(i+1)*sim_chunk_length], is_final=is_final)
             if results is not None and len(results) > 0:
                 nbests = [text for text, token, token_int, hyp in results]
-                text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
+                utterance_text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
                 if not (quiet or progress):
                     prev_lines = progress_output(nbests[0], prev_lines)
             else:
                 if not (quiet or progress):
                     prev_lines = progress_output("", prev_lines)
+            if not (quiet or progress):
+                if is_final:
+                    sys.stdout.write('\n')
+                    prev_lines = 0
+                    complete_text += utterance_text + ' '
+                    utterance_text = ''
 
         results = speech2text(speech[(i+1)*sim_chunk_length:len(speech)], is_final=True)
     else:
         results = speech2text(speech, is_final=True)
+
     nbests = [text for text, token, token_int, hyp in results]
     prev_lines = progress_output(nbests[0], prev_lines)
+    complete_text += nbests[0]
 
     print('\n')
-
     trans_file = media_path + '.txt'
     with open(trans_file, 'w') as trans_file_out:
-        trans_file_out.write(nbests[0])
+        trans_file_out.write(complete_text)
 
     print(f'Wrote transcription to {trans_file}.')
     os.remove(wavfile_path) 
@@ -197,7 +215,7 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
                 prev_lines = progress_output("", prev_lines)
 
             if finalize_iteration:
-                sys.stderr.write('\n')
+                sys.stdout.write('\n')
                 prev_lines = 0
 
         nbests = [text for text, token, token_int, hyp in results]
