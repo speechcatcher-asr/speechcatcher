@@ -33,7 +33,7 @@ def load_model(tag, device='cpu' ,beam_size=10, quiet=False):
     espnet_model_downloader = ModelDownloader(".cache/espnet")
     return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag, quiet=quiet),
         device=device, token_type=None, bpemodel=None,
-        maxlenratio=0.0, minlenratio=0.0, beam_size=10, ctc_weight=0.3, lm_weight=0.0,
+        maxlenratio=0.0, minlenratio=0.0, beam_size=beam_size, ctc_weight=0.3, lm_weight=0.0,
         penalty=0.0, nbest=1, disable_repetition_detection=True,
         decoder_text_length_limit=0, encoded_feat_length_limit=0
     )
