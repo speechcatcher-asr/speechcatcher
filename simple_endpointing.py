@@ -19,15 +19,15 @@ import argparse
 import scipy
 from scipy.io import wavfile
 import ffmpeg
-import pylab as plt
+#import pylab as plt
 import math
 from python_speech_features import logfbank
 from scipy.ndimage import gaussian_filter1d
-import audiosegment
+#import audiosegment
 import numpy as np
 
 # All timing are in frames, where one frame is 0.01 seconds.
-def process_wav(wav_filename, beam_size=10, ideal_segment_len=1000*4,
+def segment_wav(wav_filename, beam_size=10, ideal_segment_len=1000*4,
                 max_lookahead=100*180, min_len=1000*2, step=10, len_reward = 40, debug=False):
 
     samplerate, data = wavfile.read(wav_filename, mmap=False)
@@ -95,8 +95,10 @@ def process_wav(wav_filename, beam_size=10, ideal_segment_len=1000*4,
         segments = list(zip(best_cuts[0][:-1], best_cuts[0][1:]))
     
     # This prevents the overlapping of segments
-    segments = [(x[0]+1, x[1]) if x[0]!=0 else (x[0], x[1]) for x in segments]
+    # segments = [(x[0]+1, x[1]) if x[0]!=0 else (x[0], x[1]) for x in segments]
     
+    return segments
+
     # Write wave segments
     filenameS = wav_filename.rpartition('.')[0] # Filename without file extension
     filenameRS = filenameS.partition('/')[2]
