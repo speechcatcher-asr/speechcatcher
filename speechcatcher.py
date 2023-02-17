@@ -1,4 +1,6 @@
-# Note: the implementation follows the espnet example note book released here: https://github.com/espnet/notebook/blob/master/espnet2_streaming_asr_demo.ipynb
+# Note: the decoding implementation is inspired by the espnet example note book released here: https://github.com/espnet/notebook/blob/master/espnet2_streaming_asr_demo.ipynb
+# However, the implementation here is substantically different and rewritten now
+# Among other things, there is endpointing for the live and batch decoder. Threaded I/O for the microphone.
 # The notebook ( Apache-2.0 license ) was released with the clear intention of sharing how to use streaming models with EspNet2
 
 import os
@@ -127,7 +129,11 @@ def recognize(speech2text, media_path, quiet=False, progress=False):
                 if is_final:
                     sys.stdout.write('\n')
                     prev_lines = 0
-                    complete_text += utterance_text + ' '
+                    # with endpointing, its likely that there is a pause between the segments
+                    # here we actually check if the model thinks that this ending is also a sentence ending
+                    # only add a parapgrah to the text output if model and end pointer agree on the segment boundary
+                    utterance_is_completed = utterance_text.endswith('.') or utterance_text.endswith('?') or utterance_text.endswith('!')
+                    complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
                     utterance_text = ''
 
         results = speech2text(speech[(i+1)*sim_chunk_length:len(speech)], is_final=True)

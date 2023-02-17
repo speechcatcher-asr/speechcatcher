@@ -23,7 +23,6 @@ import ffmpeg
 import math
 from python_speech_features import logfbank
 from scipy.ndimage import gaussian_filter1d
-#import audiosegment
 import numpy as np
 
 # All timing are in frames, where one frame is 0.01 seconds.
@@ -39,11 +38,13 @@ def segment_wav(wav_filename, beam_size=10, ideal_segment_len=1000*4,
     fbank_feat_min_power = min(fbank_feat_power)
     fbank_feat_max_power = max(fbank_feat_power)
 
+    # We are using a gaussian 1d filter, to smooth the energy signal
     fbank_feat_power_smoothed = gaussian_filter1d(fbank_feat_power, sigma=20) * -1.0
     
     if debug:
         print('min:', fbank_feat_min_power, 'max:', fbank_feat_max_power)
 
+    # You can view this smoothed function in a plot if you set debug=True
     if debug:
         plt.imshow(fbank_feat[:1000].T, interpolation=None, aspect='auto', origin='lower')
         plt.show()
@@ -54,7 +55,7 @@ def segment_wav(wav_filename, beam_size=10, ideal_segment_len=1000*4,
 
     len_reward_factor = len_reward / float(ideal_segment_len)
 
-    # Simple Beam search to find good cuts, where the eneregy is low and where its
+    # Simple Beam search to find good segment cuts, where the eneregy is low and where its
     # still close to the ideal segment length.
     # Sequences are of this shape; first list keeps track of the split positions,
     # the float value is the combined score for the complete path.
@@ -99,48 +100,6 @@ def segment_wav(wav_filename, beam_size=10, ideal_segment_len=1000*4,
     
     return segments
 
-    # Write wave segments
-    filenameS = wav_filename.rpartition('.')[0] # Filename without file extension
-    filenameRS = filenameS.partition('/')[2]
-    
-    text = ""
-    count = 0
-    segmentsFN = f'{filenameS}_segments'
-    for a in segments:
-        start = a[0]/100
-        end = a[1]/100
-        count_str = "%.4d" % count
-        text += f'{filenameRS}_{count_str} {filenameRS} {start} {end}\n'
-        count+=1
-    with open(segmentsFN, 'w') as f:
-        f.write(text)
-    return segmentsFN, segments
-    
-    
-    filename_list = []
-    segment_count = 0
-    silence = audiosegment.silent(duration=220, frame_rate=samplerate)
-    silenceS = audiosegment.silent(duration=115, frame_rate=samplerate)
-    for i, segment in enumerate(segments):
-        actual_segment = silence.to_numpy_array()
-        actual_segment = np.append(actual_segment, data[segment[0]*160:segment[1]*160])
-        actual_segment = np.append(actual_segment, silenceS.to_numpy_array())
-        out_filename = f'{filenameS}_{i}.wav'
-        wavfile.write(out_filename, samplerate, actual_segment)
-        segment_count = i
-        filename_list.append(out_filename)
-    
-    last_segment = silence.to_numpy_array()
-    last_segment = np.append(last_segment, data[segments[-1][1]*160:])
-    if segments[-1][1] < fbank_feat_len:
-        filename_last_segment = f'{filenameS}_{segment_count + 1}.wav'
-        wavfile.write(filename_last_segment, samplerate, last_segment)
-        filename_list.append(filename_last_segment)
-        segments.append((segments[-1][1]+1, fbank_feat_len))
-
-    return filename_list, segments
-
-
 if __name__ == '__main__':
     # Argument parser
     parser = argparse.ArgumentParser(description='This tool does a simple endpointing beam search over a long audio'
@@ -170,3 +129,4 @@ if __name__ == '__main__':
     )
 
     result = process_wav(tmp_file, debug=False)
+    print(result)
