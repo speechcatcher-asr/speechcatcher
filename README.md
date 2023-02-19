@@ -35,6 +35,19 @@ or to transcribe data live from your microphone:
 All required model files are downloaded automatically and placed into a ".cache" directory.
 
 
+## Citation
+
+If you use speechcatcher models in your research, for now just cite this repository:
+
+@misc{milde2023speechcatcher,
+  author = {Milde, Benjamin},
+  title = {Speechcatcher},
+  year = {2023},
+  publisher = {GitHub},
+  journal = {GitHub repository},
+  howpublished = {\url{https://github.com/speechcatcher-asr/speechcatcher}},
+}
+
 ## Sponsors
 
 Speechcatcher is gracefully funded by
