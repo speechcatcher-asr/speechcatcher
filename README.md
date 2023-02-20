@@ -34,6 +34,11 @@ or to transcribe data live from your microphone:
 
 All required model files are downloaded automatically and placed into a ".cache" directory.
 
+## Speechcatcher training
+
+Speechcatcher models are trained by using Whisper large as a teacher model:
+
+![Speechcatcher Teacher/student training](https://github.com/speechcatcher-asr/speechcatcher/raw/main/speechcatcher_training.svg)
 
 ## Citation
 
