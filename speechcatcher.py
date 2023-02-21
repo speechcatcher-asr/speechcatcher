@@ -82,7 +82,7 @@ def progress_output(text, prev_lines = 0):
 # quiet mode: don't output partial transcriptions
 # progress mode: output transcription progress
 
-def recognize(speech2text, media_path, quiet=False, progress=False):
+def recognize(speech2text, media_path, output_file='', quiet=False, progress=False):
     ensure_dir('.tmp/')
     wavfile_path = '.tmp/' + hashlib.sha1(args.inputfile.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
@@ -146,11 +146,19 @@ def recognize(speech2text, media_path, quiet=False, progress=False):
     complete_text += nbests[0]
 
     print('\n')
-    trans_file = media_path + '.txt'
-    with open(trans_file, 'w') as trans_file_out:
-        trans_file_out.write(complete_text)
 
-    print(f'Wrote transcription to {trans_file}.')
+    # Automatically generate output .txt name from media_path if it isnt set
+    # media_path can also be an URL, in that case it needs special handling
+    if output_file == '':
+        if media_path.startswith('http://') or media_path.startswith('https://'):
+            output_file = media_path.split('/')[-1] + '.txt'
+        else:
+            output_file = media_path + '.txt'
+
+    with open(output_file, 'w') as output_file_out:
+        output_file_out.write(complete_text)
+
+    print(f'Wrote transcription to {output_file}.')
     os.remove(wavfile_path) 
 
 # List all available microphones on this system
