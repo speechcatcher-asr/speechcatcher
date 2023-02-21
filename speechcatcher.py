@@ -107,6 +107,7 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     print(segments)
     utterance_text = ''
     complete_text = ''
+    paragraphs = []
 
     if sim_chunk_length > 0:
         for i in tqdm(range(speech_len//sim_chunk_length), disable= not progress):
@@ -134,7 +135,16 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
                     # here we actually check if the model thinks that this ending is also a sentence ending
                     # only add a parapgrah to the text output if model and end pointer agree on the segment boundary
                     utterance_is_completed = utterance_text.endswith('.') or utterance_text.endswith('?') or utterance_text.endswith('!')
-                    complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
+                    if utterance_is_completed or len(paragraphs)==0:
+                        # Make sure the paragraph starts with a capitalized letter
+                        if len(utterance_text) > 0 and utterance_text[0].islower():
+                            utterance_text = utterance_text[0].upper() + utterance_text[1:]
+
+                        paragraphs += [utterance_text]
+                    else:
+                        # might be in the middle of a sentence - append to the last paragraph
+                        paragraphs[-1] += ' ' + utterance_text
+                    #complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
                     utterance_text = ''
 
         results = speech2text(speech[(i+1)*sim_chunk_length:len(speech)], is_final=True)
@@ -143,7 +153,9 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
 
     nbests = [text for text, token, token_int, hyp in results]
     prev_lines = progress_output(nbests[0], prev_lines)
-    complete_text += nbests[0]
+    paragraphs += [nbests[0]]
+
+    complete_text = '\n\n'.join(paragraphs)
 
     print('\n')
 
