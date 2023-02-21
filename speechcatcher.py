@@ -1,5 +1,5 @@
 # Note: the decoding implementation is inspired by the espnet example note book released here: https://github.com/espnet/notebook/blob/master/espnet2_streaming_asr_demo.ipynb
-# However, the implementation here is substantically different and rewritten now
+# However, the implementation here is substantically different and basically rewritten
 # Among other things, there is endpointing for the live and batch decoder. Threaded I/O for the microphone.
 # The notebook ( Apache-2.0 license ) was released with the clear intention of sharing how to use streaming models with EspNet2
 
@@ -240,7 +240,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Speechcatcher utility to decode speech with speechcatcher espnet models.')
     parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription', action='store_true')
     parser.add_argument('-t', '--max-record-time', dest='max_record_time', help='Maximum record time in seconds (live transcription).', type=float, default=120)
-    parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_l', help='Choose the model file', type=str)
+    parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_l', help='Choose a model: de_streaming_transformer_m or de_streaming_transformer_l', type=str)
     parser.add_argument('-d', '--device', dest='device', default='cpu', help="Computation device. Either 'cpu' or 'cuda'. Note: Mac M1 / mps support isn't available yet.")    
     parser.add_argument('--lang', dest='language', default='', help='Explicity set language, default is empty = deduct languagefrom model tag', type=str)
     parser.add_argument('-b','--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=5)
