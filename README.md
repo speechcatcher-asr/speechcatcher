@@ -8,13 +8,21 @@ Our first model is for German, trained on 13k hours of speech. More models will 
 
 ## Installation instructions:
 
-Install portaudio and libsndfile, on Mac:
+Install portaudio, on Mac:
 
     brew install portaudio libsndfile
+    
+on Linux:
+    
+    sudo apt-get install portaudio19-dev python3.10-dev
 
 Create a virtual environment:
 
     virtualenv -p python3.10 speechcatcher_env
+
+Note, if you get "-bash: virtualenv: command not found", install virtualenv through pip:  
+
+    #sudo pip3 install virtualenv 
 
 Activate it:
 
