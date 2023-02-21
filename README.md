@@ -8,9 +8,13 @@ Our first model is for German, trained on 13k hours of speech. More models will 
 
 ## Installation instructions:
 
-Install portaudio and libsndfile, on Mac:
+Install portaudio, on Mac:
 
     brew install portaudio libsndfile
+    
+on Linux:
+    
+    sudo apt-get install portaudio19-dev
 
 Create a virtual environment:
 
