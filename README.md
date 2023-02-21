@@ -14,7 +14,7 @@ Install portaudio, on Mac:
     
 on Linux:
     
-    sudo apt-get install portaudio19-dev
+    sudo apt-get install portaudio19-dev python3.10-dev
 
 Create a virtual environment:
 
