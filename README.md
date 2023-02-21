@@ -16,6 +16,10 @@ Create a virtual environment:
 
     virtualenv -p python3.10 speechcatcher_env
 
+Note, if you get "-bash: virtualenv: command not found", install virtualenv through pip:  
+
+    #sudo pip3 install virtualenv 
+
 Activate it:
 
     source speechcatcher_env/bin/activate
