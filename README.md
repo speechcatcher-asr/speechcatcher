@@ -10,11 +10,11 @@ Our first model is for German, trained on 13k hours of speech. More models will 
 
 Install portaudio, on Mac:
 
-    brew install portaudio libsndfile
+    brew install portaudio ffmpeg
     
 on Linux:
     
-    sudo apt-get install portaudio19-dev python3.10-dev
+    sudo apt-get install portaudio19-dev python3.10-dev ffmpeg
 
 Create a virtual environment:
 
