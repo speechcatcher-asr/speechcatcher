@@ -1,5 +1,5 @@
 # Note: the decoding implementation is inspired by the espnet example note book released here: https://github.com/espnet/notebook/blob/master/espnet2_streaming_asr_demo.ipynb
-# However, the implementation here is substantically different and rewritten now
+# However, the implementation here is substantically different and basically rewritten
 # Among other things, there is endpointing for the live and batch decoder. Threaded I/O for the microphone.
 # The notebook ( Apache-2.0 license ) was released with the clear intention of sharing how to use streaming models with EspNet2
 
@@ -22,7 +22,8 @@ from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from simple_endpointing import segment_wav 
 
 tags = {
-"de_streaming_transformer_m" : "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024" }
+"de_streaming_transformer_m" : "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024",
+"de_streaming_transformer_l" : "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024" }
 
 # ensure that the directory for the path f exists
 def ensure_dir(f):
@@ -31,7 +32,7 @@ def ensure_dir(f):
         os.makedirs(d)
 
 # Load the espnet model with the given tag
-def load_model(tag, device='cpu' ,beam_size=10, quiet=False):
+def load_model(tag, device='cpu' ,beam_size=5, quiet=False):
     espnet_model_downloader = ModelDownloader(".cache/espnet")
     return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag, quiet=quiet),
         device=device, token_type=None, bpemodel=None,
@@ -59,11 +60,13 @@ def delete_multiple_lines(n=1):
         sys.stdout.write("\x1b[1A")  # cursor up one line
     sys.stdout.write('\n\r')
 
+# Output current hypothesis on the fly. Note that .
 def progress_output(text, prev_lines = 0):
     lines=['']
     last_i=''
     for i in text:
         if len(lines[-1]) > 100:
+            # make sure that we don'T
             if last_i==' ' or last_i=='.' or last_i=='?' or last_i=='!': 
                 lines.append('')
         lines[-1] += i
@@ -77,11 +80,21 @@ def progress_output(text, prev_lines = 0):
 
     return prev_lines
 
-# using the model in 'speech2text', transcribe the path in 'media_path'
+# This function makes sure the first letter of an utterance / paragraph is capitalized
+def upperCaseFirstLetter(utterance_text):
+    if len(utterance_text) > 0 and utterance_text[0].islower():
+        utterance_text = utterance_text[0].upper() + utterance_text[1:]
+    return utterance_text
+
+# Checks if an utterance is completed
+def is_completed(utterance):
+    return utterance.endswith('.') or utterance.endswith('?') or utterance.endswith('!')
+
+# Using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
 # progress mode: output transcription progress
 
-def recognize(speech2text, media_path, quiet=False, progress=False):
+def recognize(speech2text, media_path, output_file='', quiet=False, progress=False):
     ensure_dir('.tmp/')
     wavfile_path = '.tmp/' + hashlib.sha1(args.inputfile.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
@@ -103,9 +116,10 @@ def recognize(speech2text, media_path, quiet=False, progress=False):
     prev_lines = 0
 
     segments = segment_wav(wavfile_path)
-    print(segments)
+    
     utterance_text = ''
     complete_text = ''
+    paragraphs = []
 
     if sim_chunk_length > 0:
         for i in tqdm(range(speech_len//sim_chunk_length), disable= not progress):
@@ -127,13 +141,26 @@ def recognize(speech2text, media_path, quiet=False, progress=False):
                     prev_lines = progress_output("", prev_lines)
             if not (quiet or progress):
                 if is_final:
-                    sys.stdout.write('\n')
                     prev_lines = 0
+
                     # with endpointing, its likely that there is a pause between the segments
                     # here we actually check if the model thinks that this ending is also a sentence ending
                     # only add a parapgrah to the text output if model and end pointer agree on the segment boundary
-                    utterance_is_completed = utterance_text.endswith('.') or utterance_text.endswith('?') or utterance_text.endswith('!')
-                    complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
+                    prev_utterance_is_completed = True
+                    if len(paragraphs) > 0:
+                        prev_utterance_is_completed = is_completed(paragraphs[-1])
+                    if prev_utterance_is_completed:
+                        # Make sure the paragraph starts with a capitalized letter
+                        utterance_text = upperCaseFirstLetter(utterance_text)
+                        paragraphs += [utterance_text]
+                    else:
+                        # might be in the middle of a sentence - append to the last (open) paragraph
+                        paragraphs[-1] += ' ' + utterance_text
+
+                    if is_completed(utterance_text):
+                        sys.stdout.write('\n')
+
+                    #complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
                     utterance_text = ''
 
         results = speech2text(speech[(i+1)*sim_chunk_length:len(speech)], is_final=True)
@@ -142,14 +169,30 @@ def recognize(speech2text, media_path, quiet=False, progress=False):
 
     nbests = [text for text, token, token_int, hyp in results]
     prev_lines = progress_output(nbests[0], prev_lines)
-    complete_text += nbests[0]
+   
+    # Append final parapgraph 
+    if is_completed(paragraphs[-1]):
+        utterance_text = upperCaseFirstLetter(nbests[0])
+        paragraphs += [utterance_text]
+    else:
+        paragraphs[-1] += ' ' + nbests[0]
+
+    complete_text = '\n\n'.join(paragraphs)
 
     print('\n')
-    trans_file = media_path + '.txt'
-    with open(trans_file, 'w') as trans_file_out:
-        trans_file_out.write(complete_text)
 
-    print(f'Wrote transcription to {trans_file}.')
+    # Automatically generate output .txt name from media_path if it isnt set
+    # media_path can also be an URL, in that case it needs special handling
+    if output_file == '':
+        if media_path.startswith('http://') or media_path.startswith('https://'):
+            output_file = media_path.split('/')[-1] + '.txt'
+        else:
+            output_file = media_path + '.txt'
+
+    with open(output_file, 'w') as output_file_out:
+        output_file_out.write(complete_text)
+
+    print(f'Wrote transcription to {output_file}.')
     os.remove(wavfile_path) 
 
 # List all available microphones on this system
@@ -239,10 +282,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Speechcatcher utility to decode speech with speechcatcher espnet models.')
     parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription', action='store_true')
     parser.add_argument('-t', '--max-record-time', dest='max_record_time', help='Maximum record time in seconds (live transcription).', type=float, default=120)
-    parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_m', help='Choose the model file', type=str)
-    parser.add_argument('-d', '--device', dest='device', default='cpu', help="Computation device. Either 'cpu' or 'cuda'. Note: mac m1 / mps support isn't available yet.")    
+    parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_l', help='Choose a model: de_streaming_transformer_m or de_streaming_transformer_l', type=str)
+    parser.add_argument('-d', '--device', dest='device', default='cpu', help="Computation device. Either 'cpu' or 'cuda'. Note: Mac M1 / mps support isn't available yet.")    
     parser.add_argument('--lang', dest='language', default='', help='Explicity set language, default is empty = deduct languagefrom model tag', type=str)
-    parser.add_argument('-b','--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=10)
+    parser.add_argument('-b','--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=5)
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file', action='store_true')
     parser.add_argument('--progress', dest='progress', help='Show progress when transcribing a media file', action='store_true')
     parser.add_argument('--save-debug-wav', dest='save_debug_wav', help='Save recording to debug.wav, only applicable to live decoding', action='store_true')

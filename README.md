@@ -8,13 +8,21 @@ Our first model is for German, trained on 13k hours of speech. More models will 
 
 ## Installation instructions:
 
-Install portaudio and libsndfile, on Mac:
+Install portaudio, on Mac:
 
-    brew install portaudio libsndfile
+    brew install portaudio ffmpeg
+    
+on Linux:
+    
+    sudo apt-get install portaudio19-dev python3.10-dev ffmpeg
 
 Create a virtual environment:
 
     virtualenv -p python3.10 speechcatcher_env
+
+Note, if you get "-bash: virtualenv: command not found", install virtualenv through pip:  
+
+    #sudo pip3 install virtualenv 
 
 Activate it:
 
@@ -34,6 +42,24 @@ or to transcribe data live from your microphone:
 
 All required model files are downloaded automatically and placed into a ".cache" directory.
 
+## Speechcatcher training
+
+Speechcatcher models are trained by using Whisper large as a teacher model:
+
+![Speechcatcher Teacher/student training](https://github.com/speechcatcher-asr/speechcatcher/raw/main/speechcatcher_training.svg)
+
+## Citation
+
+If you use speechcatcher models in your research, for now just cite this repository:
+
+    @misc{milde2023speechcatcher,
+      author = {Milde, Benjamin},
+      title = {Speechcatcher},
+      year = {2023},
+      publisher = {GitHub},
+      journal = {GitHub repository},
+      howpublished = {\url{https://github.com/speechcatcher-asr/speechcatcher}},
+    }
 
 ## Sponsors
 
