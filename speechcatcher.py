@@ -60,11 +60,13 @@ def delete_multiple_lines(n=1):
         sys.stdout.write("\x1b[1A")  # cursor up one line
     sys.stdout.write('\n\r')
 
+# Output current hypothesis on the fly. Note that .
 def progress_output(text, prev_lines = 0):
     lines=['']
     last_i=''
     for i in text:
         if len(lines[-1]) > 100:
+            # make sure that we don'T
             if last_i==' ' or last_i=='.' or last_i=='?' or last_i=='!': 
                 lines.append('')
         lines[-1] += i
@@ -78,7 +80,17 @@ def progress_output(text, prev_lines = 0):
 
     return prev_lines
 
-# using the model in 'speech2text', transcribe the path in 'media_path'
+# This function makes sure the first letter of an utterance / paragraph is capitalized
+def upperCaseFirstLetter(utterance_text):
+    if len(utterance_text) > 0 and utterance_text[0].islower():
+        utterance_text = utterance_text[0].upper() + utterance_text[1:]
+    return utterance_text
+
+# Checks if an utterance is completed
+def is_completed(utterance):
+    return utterance.endswith('.') or utterance.endswith('?') or utterance.endswith('!')
+
+# Using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
 # progress mode: output transcription progress
 
@@ -104,7 +116,7 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     prev_lines = 0
 
     segments = segment_wav(wavfile_path)
-    print(segments)
+    
     utterance_text = ''
     complete_text = ''
     paragraphs = []
@@ -129,7 +141,6 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
                     prev_lines = progress_output("", prev_lines)
             if not (quiet or progress):
                 if is_final:
-                    sys.stdout.write('\n')
                     prev_lines = 0
 
                     # with endpointing, its likely that there is a pause between the segments
@@ -137,16 +148,18 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
                     # only add a parapgrah to the text output if model and end pointer agree on the segment boundary
                     prev_utterance_is_completed = True
                     if len(paragraphs) > 0:
-                        prev_utterance_is_completed = paragraphs[-1].endswith('.') or paragraphs[-1].endswith('?') or paragraphs[-1].endswith('!')
+                        prev_utterance_is_completed = is_completed(paragraphs[-1])
                     if prev_utterance_is_completed:
                         # Make sure the paragraph starts with a capitalized letter
-                        if len(utterance_text) > 0 and utterance_text[0].islower():
-                            utterance_text = utterance_text[0].upper() + utterance_text[1:]
-
+                        utterance_text = upperCaseFirstLetter(utterance_text)
                         paragraphs += [utterance_text]
                     else:
                         # might be in the middle of a sentence - append to the last (open) paragraph
                         paragraphs[-1] += ' ' + utterance_text
+
+                    if is_completed(utterance_text):
+                        sys.stdout.write('\n')
+
                     #complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
                     utterance_text = ''
 
@@ -156,7 +169,13 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
 
     nbests = [text for text, token, token_int, hyp in results]
     prev_lines = progress_output(nbests[0], prev_lines)
-    paragraphs += [nbests[0]]
+   
+    # Append final parapgraph 
+    if is_completed(paragraphs[-1]):
+        utterance_text = upperCaseFirstLetter(nbests[0])
+        paragraphs += [utterance_text]
+    else:
+        paragraphs[-1] += ' ' + nbests[0]
 
     complete_text = '\n\n'.join(paragraphs)
 
