@@ -171,7 +171,7 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     prev_lines = progress_output(nbests[0], prev_lines)
    
     # Append final parapgraph 
-    if is_completed(paragraphs[-1]):
+    if len(paragraphs) == 0 or is_completed(paragraphs[-1]):
         utterance_text = upperCaseFirstLetter(nbests[0])
         paragraphs += [utterance_text]
     else:
