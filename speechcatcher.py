@@ -1,13 +1,15 @@
-# Note: the decoding implementation is inspired by the espnet example note book released here: https://github.com/espnet/notebook/blob/master/espnet2_streaming_asr_demo.ipynb
-# However, the implementation here is substantically different and basically rewritten
+# Note: the decoding implementation is inspired by the espnet example notebook released here:
+# https://github.com/espnet/notebook/blob/master/espnet2_streaming_asr_demo.ipynb
+#
+# However, the implementation here is substantially different and basically rewritten
 # Among other things, there is endpointing for the live and batch decoder. Threaded I/O for the microphone.
-# The notebook ( Apache-2.0 license ) was released with the clear intention of sharing how to use streaming models with EspNet2
+# The notebook ( Apache-2.0 license ) was released with the clear intention of sharing how to use
+# streaming models with EspNet2.
 
 import os
 import sys
 import argparse
 import hashlib
-import espnet
 from espnet2.bin.asr_inference_streaming import Speech2TextStreaming
 from espnet_model_zoo.downloader import ModelDownloader
 import numpy as np
@@ -20,11 +22,12 @@ from tqdm import tqdm
 import math
 
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from simple_endpointing import segment_wav 
+from simple_endpointing import segment_wav
 
 tags = {
-"de_streaming_transformer_m" : "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024",
-"de_streaming_transformer_l" : "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024" }
+    "de_streaming_transformer_m": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024",
+    "de_streaming_transformer_l": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024"}
+
 
 # ensure that the directory for the path f exists
 def ensure_dir(f):
@@ -32,28 +35,30 @@ def ensure_dir(f):
     if not os.path.exists(d):
         os.makedirs(d)
 
+
 # Load the espnet model with the given tag
-def load_model(tag, device='cpu' ,beam_size=5, quiet=False):
+def load_model(tag, device='cpu', beam_size=5, quiet=False):
     espnet_model_downloader = ModelDownloader(".cache/espnet")
     return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag, quiet=quiet),
-        device=device, token_type=None, bpemodel=None,
-        maxlenratio=0.0, minlenratio=0.0, beam_size=beam_size, ctc_weight=0.3, lm_weight=0.0,
-        penalty=0.0, nbest=1, disable_repetition_detection=True,
-        decoder_text_length_limit=0, encoded_feat_length_limit=0
-    )
+                                device=device, token_type=None, bpemodel=None,
+                                maxlenratio=0.0, minlenratio=0.0, beam_size=beam_size, ctc_weight=0.3, lm_weight=0.0,
+                                penalty=0.0, nbest=1, disable_repetition_detection=True,
+                                decoder_text_length_limit=0, encoded_feat_length_limit=0
+                                )
+
 
 # Convert input file to 16 kHz mono
 def convert_inputfile(filename, outfile_wav):
     return (
         ffmpeg.input(filename)
-        .output(outfile_wav, acodec='pcm_s16le', ac=1, ar='16k')
-        .run(quiet=True, overwrite_output=True))
+            .output(outfile_wav, acodec='pcm_s16le', ac=1, ar='16k')
+            .run(quiet=True, overwrite_output=True))
+
 
 # Uses ANSI esc codes to delete previous lines. Resets the cursor to the beginning of an empty first line.
 # see https://stackoverflow.com/questions/19596750/is-there-a-way-to-clear-your-printed-text-in-python
 # and also "Everything you never wanted to know about ANSI escape codes"
 # https://notes.burke.libbey.me/ansi-escape-codes/
-
 def delete_multiple_lines(n=1):
     """Delete the last n lines in ."""
     for _ in range(n):
@@ -61,17 +66,18 @@ def delete_multiple_lines(n=1):
         sys.stdout.write("\x1b[1A")  # cursor up one line
     sys.stdout.write('\n\r')
 
+
 # Output current hypothesis on the fly. Note that .
-def progress_output(text, prev_lines = 0):
-    lines=['']
-    last_i=''
+def progress_output(text, prev_lines=0):
+    lines = ['']
+    last_i = ''
     for i in text:
         if len(lines[-1]) > 100:
             # make sure that we don'T
-            if last_i==' ' or last_i=='.' or last_i=='?' or last_i=='!': 
+            if last_i == ' ' or last_i == '.' or last_i == '?' or last_i == '!':
                 lines.append('')
         lines[-1] += i
-        last_i = i 
+        last_i = i
 
     delete_multiple_lines(n=prev_lines)
     sys.stdout.write('\n'.join(lines))
@@ -81,36 +87,39 @@ def progress_output(text, prev_lines = 0):
 
     return prev_lines
 
+
 # This function makes sure the first letter of an utterance / paragraph is capitalized
 def upperCaseFirstLetter(utterance_text):
     if len(utterance_text) > 0 and utterance_text[0].islower():
         utterance_text = utterance_text[0].upper() + utterance_text[1:]
     return utterance_text
 
+
 # Checks if an utterance is completed
 def is_completed(utterance):
     return utterance.endswith('.') or utterance.endswith('?') or utterance.endswith('!')
 
+
 # Using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
 # progress mode: output transcription progress
-
 def recognize(speech2text, media_path, output_file='', quiet=False, progress=False):
     ensure_dir('.tmp/')
     wavfile_path = '.tmp/' + hashlib.sha1(args.inputfile.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
 
     with wave.open(wavfile_path, 'rb') as wavfile_in:
-        ch=wavfile_in.getnchannels()
-        bits=wavfile_in.getsampwidth()
-        rate=wavfile_in.getframerate()
-        nframes=wavfile_in.getnframes()
+        ch = wavfile_in.getnchannels()
+        bits = wavfile_in.getsampwidth()
+        rate = wavfile_in.getframerate()
+        nframes = wavfile_in.getnframes()
         buf = wavfile_in.readframes(-1)
-        data=np.frombuffer(buf, dtype='int16')
-    
-    assert(rate==16000)
+        data = np.frombuffer(buf, dtype='int16')
 
-    speech = data.astype(np.float16)/32767.0 #32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
+    assert (rate == 16000)
+
+    # 32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
+    speech = data.astype(np.float16) / 32767.0
     chunk_length = 8192
     speech_len = len(speech)
 
@@ -124,9 +133,10 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     # the segments from segment_wav are in frame positions (100 frames per second)
     # with the given chunksize, we calculate the iterations here where we need to finalize
     # note: we do not finalize at the beginning, but at -1 to easily calculate start and end positions for the loop below
-    segments_i = [-1]+[math.ceil((((f/100.)*rate) - chunk_length) / chunk_length) for f in segment_frame_pos_end]+[max_i]
+    segments_i = [-1] + [math.ceil((((f / 100.) * rate) - chunk_length) / chunk_length) for f in
+                         segment_frame_pos_end] + [max_i]
 
-    #print('finalize iterations:', segments_i)
+    # print('finalize iterations:', segments_i)
 
     utterance_text = ''
     complete_text = ''
@@ -136,7 +146,7 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     seg_num = 1
     seg_num_total = len(segments_i)
     for start, end in zip(segments_i[:-1], segments_i[1:]):
-        for i in tqdm(range(start+1, end+1), disable=not progress, desc=f'Segment {seg_num}/{seg_num_total}'):
+        for i in tqdm(range(start + 1, end + 1), disable=not progress, desc=f'Segment {seg_num}/{seg_num_total}'):
             speech_chunk_start = i * chunk_length
             speech_chunk_end = (i + 1) * chunk_length
             if speech_chunk_end > speech_len:
@@ -170,7 +180,6 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
 
 def batch_recognize_inner_loop(speech2text, speech_chunk, i, paragraphs, prev_lines, progress, quiet, rate,
                                chunk_length, utterance_text, is_final, debug_pos=False):
-
     # first calculate in seconds, then multiply with 100 to get the framepos (100 frames in one second.)
     frame_pos = ((i + 1) * chunk_length / rate) * 100.
     if is_final and debug_pos:
@@ -186,7 +195,7 @@ def batch_recognize_inner_loop(speech2text, speech_chunk, i, paragraphs, prev_li
         if not (quiet or progress):
             prev_lines = progress_output("", prev_lines)
         utterance_text = ''
-        
+
     if is_final:
         prev_lines = 0
 
@@ -220,35 +229,38 @@ def list_microphones():
         if (p.get_device_info_by_host_api_device_index(0, i).get('maxInputChannels')) > 0:
             print("Input Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
 
+
 # Stream audio data from a microphone to an espnet model
 # Chunksize should be atleats 6400 for a lookahead of 16 frames 
 def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, recording_format=pyaudio.paInt16,
                          samplerate=16000, chunksize=8192, save_debug_wav=False, exception_on_pyaudio_overflow=True,
                          finalize_update_iters=7):
     list_microphones()
-    blocks=[]
+    blocks = []
 
     p = pyaudio.PyAudio()
-    stream = p.open(format=recording_format, channels=channels, rate=samplerate, input=True, frames_per_buffer=chunksize)
+    stream = p.open(format=recording_format, channels=channels, rate=samplerate, input=True,
+                    frames_per_buffer=chunksize)
+
     print(f'Model {tag} fully loaded, starting live transcription with your microphone.')
 
     n_best_lens = []
     prev_lines = 0
-    
+
     with ThreadPoolExecutor(max_workers=1) as executor:
         data_future = executor.submit(stream.read, chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
-        for i in range(0,int(samplerate/chunksize*record_max_seconds)+1):
+        for i in range(0, int(samplerate / chunksize * record_max_seconds) + 1):
 
             data = data_future.result(timeout=2)
             data_future = executor.submit(stream.read, chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
 
-            data=np.frombuffer(data, dtype='int16')
+            data = np.frombuffer(data, dtype='int16')
             if save_debug_wav:
                 blocks.append(data)
-            
-            #32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
-            data=data.astype(np.float16)/32767.0
-            if i==int(samplerate/chunksize*record_max_seconds):
+
+            # 32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
+            data = data.astype(np.float16) / 32767.0
+            if i == int(samplerate / chunksize * record_max_seconds):
                 results = speech2text(speech=data, is_final=True)
                 break
 
@@ -263,7 +275,7 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
                     finalize_iteration = True
                     n_best_lens = []
                 else:
-                    finalize_iteration = False     
+                    finalize_iteration = False
 
             results = speech2text(speech=data, is_final=finalize_iteration)
 
@@ -291,19 +303,30 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
 
     print("\nMaximum recording time reached, exiting.")
 
+
 if __name__ == '__main__':
 
-    parser = argparse.ArgumentParser(description='Speechcatcher utility to decode speech with speechcatcher espnet models.')
-    parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription', action='store_true')
-    parser.add_argument('-t', '--max-record-time', dest='max_record_time', help='Maximum record time in seconds (live transcription).', type=float, default=120)
-    parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_l', help='Choose a model: de_streaming_transformer_m or de_streaming_transformer_l', type=str)
-    parser.add_argument('-d', '--device', dest='device', default='cpu', help="Computation device. Either 'cpu' or 'cuda'. Note: Mac M1 / mps support isn't available yet.")    
-    parser.add_argument('--lang', dest='language', default='', help='Explicity set language, default is empty = deduct languagefrom model tag', type=str)
-    parser.add_argument('-b','--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=5)
-    parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file', action='store_true')
-    parser.add_argument('--progress', dest='progress', help='Show progress when transcribing a media file', action='store_true')
-    parser.add_argument('--save-debug-wav', dest='save_debug_wav', help='Save recording to debug.wav, only applicable to live decoding', action='store_true')
-    parser.add_argument('--num-threads', dest='num_threads', default=1, help='Set number of threads used for intraop parallelism on CPU in pytorch.', type=int)
+    parser = argparse.ArgumentParser(
+        description='Speechcatcher utility to decode speech with speechcatcher espnet models.')
+    parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription',
+                        action='store_true')
+    parser.add_argument('-t', '--max-record-time', dest='max_record_time',
+                        help='Maximum record time in seconds (live transcription).', type=float, default=120)
+    parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_l',
+                        help='Choose a model: de_streaming_transformer_m or de_streaming_transformer_l', type=str)
+    parser.add_argument('-d', '--device', dest='device', default='cpu',
+                        help="Computation device. Either 'cpu' or 'cuda'. Note: Mac M1 / mps support isn't available yet.")
+    parser.add_argument('--lang', dest='language', default='',
+                        help='Explicity set language, default is empty = deduct languagefrom model tag', type=str)
+    parser.add_argument('-b', '--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=5)
+    parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file',
+                        action='store_true')
+    parser.add_argument('--progress', dest='progress', help='Show progress when transcribing a media file',
+                        action='store_true')
+    parser.add_argument('--save-debug-wav', dest='save_debug_wav',
+                        help='Save recording to debug.wav, only applicable to live decoding', action='store_true')
+    parser.add_argument('--num-threads', dest='num_threads', default=1,
+                        help='Set number of threads used for intraop parallelism on CPU in pytorch.', type=int)
 
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
@@ -320,9 +343,10 @@ if __name__ == '__main__':
     speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=args.quiet or args.progress)
 
     args = parser.parse_args()
-    
+
     if args.live:
-        recognize_microphone(speech2text, tag, record_max_seconds=args.max_record_time, save_debug_wav=args.save_debug_wav)
+        recognize_microphone(speech2text, tag, record_max_seconds=args.max_record_time,
+                             save_debug_wav=args.save_debug_wav)
     elif args.inputfile != '':
         recognize(speech2text, args.inputfile, quiet=args.quiet, progress=args.progress)
     else:
