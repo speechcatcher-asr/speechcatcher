@@ -17,6 +17,7 @@ from scipy.io import wavfile
 import ffmpeg
 import torch
 from tqdm import tqdm
+import math
 
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from simple_endpointing import segment_wav 
@@ -110,39 +111,43 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     assert(rate==16000)
 
     speech = data.astype(np.float16)/32767.0 #32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
-    sim_chunk_length = 8192 #640*4 #400
+    chunk_length = 8192
     speech_len = len(speech)
 
     prev_lines = 0
 
     segments = segment_wav(wavfile_path)
-    
+    segment_frame_pos_end = [segment[1] for segment in segments]
+
+    max_i = (speech_len // chunk_length) + 1
+
+    # the segments from segment_wav are in frame positions (100 frames per second)
+    # with the given chunksize, we calculate the iterations here where we need to finalize
+    # note: we do not finalize at the beginning, but at -1 to easily calculate start and end positions for the loop below
+    segments_i = [-1]+[math.ceil((((f/100.)*rate) - chunk_length) / chunk_length) for f in segment_frame_pos_end]+[max_i]
+
+    #print('finalize iterations:', segments_i)
+
     utterance_text = ''
     complete_text = ''
     paragraphs = []
+    speech_len = len(speech)
 
-    if sim_chunk_length > 0:
-        for i in tqdm(range(speech_len//sim_chunk_length), disable= not progress):
+    seg_num = 1
+    seg_num_total = len(segments_i)
+    for start, end in zip(segments_i[:-1], segments_i[1:]):
+        for i in tqdm(range(start+1, end+1), disable=not progress, desc=f'Segment {seg_num}/{seg_num_total}'):
+            speech_chunk_start = i * chunk_length
+            speech_chunk_end = (i + 1) * chunk_length
+            if speech_chunk_end > speech_len:
+                speech_chunk_end = speech_len
 
-            paragraphs, prev_lines = batch_recognize_inner_loop(i, paragraphs, prev_lines, progress, quiet, rate,
-                                                                segments, sim_chunk_length, speech, speech2text,
-                                                                utterance_text)
+            speech_chunk = speech[speech_chunk_start: speech_chunk_end]
 
-        results = speech2text(speech[(i+1)*sim_chunk_length:len(speech)], is_final=True)
-    else:
-        results = speech2text(speech, is_final=True)
-
-    nbests = [text for text, token, token_int, hyp in results]
-    
-    if not (quiet or progress):
-        prev_lines = progress_output(nbests[0], prev_lines)
-   
-    # Append final parapgraph 
-    if len(paragraphs) == 0 or is_completed(paragraphs[-1]):
-        utterance_text = upperCaseFirstLetter(nbests[0])
-        paragraphs += [utterance_text]
-    else:
-        paragraphs[-1] += ' ' + nbests[0]
+            paragraphs, prev_lines = batch_recognize_inner_loop(speech2text, speech_chunk, i, paragraphs, prev_lines,
+                                                                progress, quiet, rate, chunk_length,
+                                                                utterance_text, is_final=i in segments_i)
+        seg_num += 1
 
     complete_text = '\n\n'.join(paragraphs)
 
@@ -163,16 +168,15 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     os.remove(wavfile_path)
 
 
-def batch_recognize_inner_loop(i, paragraphs, prev_lines, progress, quiet, rate, segments, sim_chunk_length, speech,
-                               speech2text, utterance_text):
-    # first calculate in seconds, then mutiply with 100 to get the framepos (100 frames in one second.)
-    frame_pos = ((i + 1) * sim_chunk_length / rate) * 100.
-    if len(segments) > 0 and frame_pos >= segments[0][1]:
-        is_final = True
-        segments = segments[1:]
-    else:
-        is_final = False
-    results = speech2text(speech=speech[i * sim_chunk_length:(i + 1) * sim_chunk_length], is_final=is_final)
+def batch_recognize_inner_loop(speech2text, speech_chunk, i, paragraphs, prev_lines, progress, quiet, rate,
+                               chunk_length, utterance_text, is_final, debug_pos=False):
+
+    # first calculate in seconds, then multiply with 100 to get the framepos (100 frames in one second.)
+    frame_pos = ((i + 1) * chunk_length / rate) * 100.
+    if is_final and debug_pos:
+        print('is final @', f'{i}', f'{frame_pos}')
+
+    results = speech2text(speech=speech_chunk, is_final=is_final)
     if results is not None and len(results) > 0:
         nbests = [text for text, token, token_int, hyp in results]
         utterance_text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
@@ -184,9 +188,9 @@ def batch_recognize_inner_loop(i, paragraphs, prev_lines, progress, quiet, rate,
     if is_final:
         prev_lines = 0
 
-        # with endpointing, its likely that there is a pause between the segments
+        # with endpointing, it's likely that there is a pause between the segments
         # here we actually check if the model thinks that this ending is also a sentence ending
-        # only add a parapgrah to the text output if model and end pointer agree on the segment boundary
+        # only add a paragraph to the text output if model and end pointer agree on the segment boundary
         prev_utterance_is_completed = True
         if len(paragraphs) > 0:
             prev_utterance_is_completed = is_completed(paragraphs[-1])
