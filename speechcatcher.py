@@ -185,6 +185,8 @@ def batch_recognize_inner_loop(speech2text, speech_chunk, i, paragraphs, prev_li
     else:
         if not (quiet or progress):
             prev_lines = progress_output("", prev_lines)
+        utterance_text = ''
+        
     if is_final:
         prev_lines = 0
 
@@ -205,8 +207,6 @@ def batch_recognize_inner_loop(speech2text, speech_chunk, i, paragraphs, prev_li
         if not (quiet or progress) and is_completed(utterance_text):
             sys.stdout.write('\n')
 
-        # complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
-        utterance_text = ''
     return paragraphs, prev_lines
 
 
