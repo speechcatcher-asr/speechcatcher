@@ -168,7 +168,9 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
         results = speech2text(speech, is_final=True)
 
     nbests = [text for text, token, token_int, hyp in results]
-    prev_lines = progress_output(nbests[0], prev_lines)
+    
+    if not (quiet or progress):
+        prev_lines = progress_output(nbests[0], prev_lines)
    
     # Append final parapgraph 
     if len(paragraphs) == 0 or is_completed(paragraphs[-1]):
@@ -289,7 +291,7 @@ if __name__ == '__main__':
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file', action='store_true')
     parser.add_argument('--progress', dest='progress', help='Show progress when transcribing a media file', action='store_true')
     parser.add_argument('--save-debug-wav', dest='save_debug_wav', help='Save recording to debug.wav, only applicable to live decoding', action='store_true')
-    parser.add_argument('--num-threads', dest='num_threads', default=-1, help='Set number of threads used for intraop parallelism on CPU in pytorch.', type=int)
+    parser.add_argument('--num-threads', dest='num_threads', default=1, help='Set number of threads used for intraop parallelism on CPU in pytorch.', type=int)
 
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
