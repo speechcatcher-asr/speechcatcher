@@ -123,45 +123,10 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
 
     if sim_chunk_length > 0:
         for i in tqdm(range(speech_len//sim_chunk_length), disable= not progress):
-            # first calculate in seconds, then mutiply with 100 to get the framepos (100 frames in one second.)
-            frame_pos = ((i+1)*sim_chunk_length / rate ) * 100.
-            if len(segments) > 0 and frame_pos >= segments[0][1]:
-                is_final = True
-                segments = segments[1:]
-            else:
-                is_final = False
-            results = speech2text(speech=speech[i*sim_chunk_length:(i+1)*sim_chunk_length], is_final=is_final)
-            if results is not None and len(results) > 0:
-                nbests = [text for text, token, token_int, hyp in results]
-                utterance_text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
-                if not (quiet or progress):
-                    prev_lines = progress_output(nbests[0], prev_lines)
-            else:
-                if not (quiet or progress):
-                    prev_lines = progress_output("", prev_lines)
-            
-            if is_final:
-                prev_lines = 0
 
-                # with endpointing, its likely that there is a pause between the segments
-                # here we actually check if the model thinks that this ending is also a sentence ending
-                # only add a parapgrah to the text output if model and end pointer agree on the segment boundary
-                prev_utterance_is_completed = True
-                if len(paragraphs) > 0:
-                    prev_utterance_is_completed = is_completed(paragraphs[-1])
-                if prev_utterance_is_completed:
-                    # Make sure the paragraph starts with a capitalized letter
-                    utterance_text = upperCaseFirstLetter(utterance_text)
-                    paragraphs += [utterance_text]
-                else:
-                    # might be in the middle of a sentence - append to the last (open) paragraph
-                    paragraphs[-1] += ' ' + utterance_text
-
-                if not (quiet or progress) and is_completed(utterance_text):
-                    sys.stdout.write('\n')
-
-                #complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
-                utterance_text = ''
+            paragraphs, prev_lines = batch_recognize_inner_loop(i, paragraphs, prev_lines, progress, quiet, rate,
+                                                                segments, sim_chunk_length, speech, speech2text,
+                                                                utterance_text)
 
         results = speech2text(speech[(i+1)*sim_chunk_length:len(speech)], is_final=True)
     else:
@@ -195,7 +160,51 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
         output_file_out.write(complete_text)
 
     print(f'Wrote transcription to {output_file}.')
-    os.remove(wavfile_path) 
+    os.remove(wavfile_path)
+
+
+def batch_recognize_inner_loop(i, paragraphs, prev_lines, progress, quiet, rate, segments, sim_chunk_length, speech,
+                               speech2text, utterance_text):
+    # first calculate in seconds, then mutiply with 100 to get the framepos (100 frames in one second.)
+    frame_pos = ((i + 1) * sim_chunk_length / rate) * 100.
+    if len(segments) > 0 and frame_pos >= segments[0][1]:
+        is_final = True
+        segments = segments[1:]
+    else:
+        is_final = False
+    results = speech2text(speech=speech[i * sim_chunk_length:(i + 1) * sim_chunk_length], is_final=is_final)
+    if results is not None and len(results) > 0:
+        nbests = [text for text, token, token_int, hyp in results]
+        utterance_text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
+        if not (quiet or progress):
+            prev_lines = progress_output(nbests[0], prev_lines)
+    else:
+        if not (quiet or progress):
+            prev_lines = progress_output("", prev_lines)
+    if is_final:
+        prev_lines = 0
+
+        # with endpointing, its likely that there is a pause between the segments
+        # here we actually check if the model thinks that this ending is also a sentence ending
+        # only add a parapgrah to the text output if model and end pointer agree on the segment boundary
+        prev_utterance_is_completed = True
+        if len(paragraphs) > 0:
+            prev_utterance_is_completed = is_completed(paragraphs[-1])
+        if prev_utterance_is_completed:
+            # Make sure the paragraph starts with a capitalized letter
+            utterance_text = upperCaseFirstLetter(utterance_text)
+            paragraphs += [utterance_text]
+        else:
+            # might be in the middle of a sentence - append to the last (open) paragraph
+            paragraphs[-1] += ' ' + utterance_text
+
+        if not (quiet or progress) and is_completed(utterance_text):
+            sys.stdout.write('\n')
+
+        # complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
+        utterance_text = ''
+    return paragraphs, prev_lines
+
 
 # List all available microphones on this system
 def list_microphones():
@@ -225,7 +234,6 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
     with ThreadPoolExecutor(max_workers=1) as executor:
         data_future = executor.submit(stream.read, chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
         for i in range(0,int(samplerate/chunksize*record_max_seconds)+1):
-            executor.submit
 
             data = data_future.result(timeout=2)
             data_future = executor.submit(stream.read, chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
@@ -240,7 +248,7 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
                 results = speech2text(speech=data, is_final=True)
                 break
 
-            # Simple endpointing: Here we determine if no update happend in the last finalize_update_iters iterations
+            # Simple endpointing: Here we determine if no update happened in the last finalize_update_iters iterations
             # by checking the n (finalize_update_iters) lengths of the partial text output.
             # If all n previous lengths are the same, we finalize the ASR output and start a new utterance.
 
