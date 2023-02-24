@@ -289,14 +289,14 @@ if __name__ == '__main__':
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file', action='store_true')
     parser.add_argument('--progress', dest='progress', help='Show progress when transcribing a media file', action='store_true')
     parser.add_argument('--save-debug-wav', dest='save_debug_wav', help='Save recording to debug.wav, only applicable to live decoding', action='store_true')
-    parser.add_argument('--num-threads', dest='num_threads', default=-1, help='Set number of threads used for intraop parallelism on CPU in pytorch.')
+    parser.add_argument('--num-threads', dest='num_threads', default=-1, help='Set number of threads used for intraop parallelism on CPU in pytorch.', type=int)
 
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
     args = parser.parse_args()
 
     if args.num_threads != -1:
-        torch.set_num_threads(int(args.num_threads))
+        torch.set_num_threads(args.num_threads)
 
     if args.model not in tags:
         print(f'Model {args.model} is not a valid model!')
