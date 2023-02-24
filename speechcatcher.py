@@ -125,9 +125,13 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
 
     prev_lines = 0
 
-    segments = segment_wav(wavfile_path)
-    segment_frame_pos_end = [segment[1] for segment in segments]
+    segments = []
 
+    # segment audio files longer than a minute
+    if speech_len > 60.*rate:
+        segments = segment_wav(wavfile_path)
+
+    segment_frame_pos_end = [segment[1] for segment in segments]
     max_i = (speech_len // chunk_length) + 1
 
     # the segments from segment_wav are in frame positions (100 frames per second)
@@ -144,7 +148,7 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     speech_len = len(speech)
 
     seg_num = 1
-    seg_num_total = len(segments_i)
+    seg_num_total = len(segments_i) - 1
     for start, end in zip(segments_i[:-1], segments_i[1:]):
         for i in tqdm(range(start + 1, end + 1), disable=not progress, desc=f'Segment {seg_num}/{seg_num_total}'):
             speech_chunk_start = i * chunk_length
