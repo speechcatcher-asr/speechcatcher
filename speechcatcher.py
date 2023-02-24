@@ -139,29 +139,29 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
             else:
                 if not (quiet or progress):
                     prev_lines = progress_output("", prev_lines)
-            if not (quiet or progress):
-                if is_final:
-                    prev_lines = 0
+            
+            if is_final:
+                prev_lines = 0
 
-                    # with endpointing, its likely that there is a pause between the segments
-                    # here we actually check if the model thinks that this ending is also a sentence ending
-                    # only add a parapgrah to the text output if model and end pointer agree on the segment boundary
-                    prev_utterance_is_completed = True
-                    if len(paragraphs) > 0:
-                        prev_utterance_is_completed = is_completed(paragraphs[-1])
-                    if prev_utterance_is_completed:
-                        # Make sure the paragraph starts with a capitalized letter
-                        utterance_text = upperCaseFirstLetter(utterance_text)
-                        paragraphs += [utterance_text]
-                    else:
-                        # might be in the middle of a sentence - append to the last (open) paragraph
-                        paragraphs[-1] += ' ' + utterance_text
+                # with endpointing, its likely that there is a pause between the segments
+                # here we actually check if the model thinks that this ending is also a sentence ending
+                # only add a parapgrah to the text output if model and end pointer agree on the segment boundary
+                prev_utterance_is_completed = True
+                if len(paragraphs) > 0:
+                    prev_utterance_is_completed = is_completed(paragraphs[-1])
+                if prev_utterance_is_completed:
+                    # Make sure the paragraph starts with a capitalized letter
+                    utterance_text = upperCaseFirstLetter(utterance_text)
+                    paragraphs += [utterance_text]
+                else:
+                    # might be in the middle of a sentence - append to the last (open) paragraph
+                    paragraphs[-1] += ' ' + utterance_text
 
-                    if is_completed(utterance_text):
-                        sys.stdout.write('\n')
+                if not (quiet or progress) and is_completed(utterance_text):
+                    sys.stdout.write('\n')
 
-                    #complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
-                    utterance_text = ''
+                #complete_text += utterance_text + ('\n\n' if utterance_is_completed else ' ')
+                utterance_text = ''
 
         results = speech2text(speech[(i+1)*sim_chunk_length:len(speech)], is_final=True)
     else:
