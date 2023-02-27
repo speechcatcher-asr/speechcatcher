@@ -36,7 +36,7 @@ tags = {
     "de_streaming_transformer_m": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024",
     "de_streaming_transformer_l": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024"}
 
-#see https://stackoverflow.com/questions/75193175/why-i-cant-use-multiprocessing-queue-with-processpoolexecutor
+# See https://stackoverflow.com/questions/75193175/why-i-cant-use-multiprocessing-queue-with-processpoolexecutor
 def init_pool_processes(q, speech2text):
     global pbar_queue
     global speech2text_global
@@ -45,7 +45,7 @@ def init_pool_processes(q, speech2text):
     speech2text_global = speech2text
 
 
-# ensure that the directory for the path f exists
+# Ensure that the directory for the path f exists
 def ensure_dir(f):
     d = os.path.dirname(f)
     if not os.path.exists(d):
@@ -155,15 +155,17 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
     if speech_len > 60.*rate:
         segments = segment_wav(wavfile_path)
 
-    # Get positions where we want to finalize. Everying here is still measured in frames (100 per sec).
-    # Make sure the last segment is atleast 10 seconds long, otherwise merge it with the previous one.
+    # Get positions where we want to finalize. Everything here is still measured in frames (100 frames per sec).
+    # Make sure the last segment is at least 10 seconds long, otherwise merge it with the previous one.
 
     segment_frame_pos_end = [segment[1] for segment in segments if segment[1] < speech_len_frames - 1000.]
     max_i = (speech_len // chunk_length) + 1
 
-    # the segments from segment_wav are in frame positions (100 frames per second)
+    # The segments from segment_wav are in frame positions (100 frames per second)
     # with the given chunksize, we calculate the iterations here where we need to finalize
-    # note: we do not finalize at the beginning, but at -1 to easily calculate start and end positions for the loop below
+    # note: we do not finalize at the beginning, but at -1 to easily calculate start
+    # and end positions for the loop below.
+
     segments_i = [-1] + [math.ceil((((f / 100.) * rate) - chunk_length) / chunk_length) for f in
                          segment_frame_pos_end] + [max_i]
 
@@ -181,8 +183,15 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
 
     q = multiprocessing.Queue()
 
+    # Run the transcription of segments in parallel with multiple processes.
+    # Note: we use a ProcessPoolExecutor to distribute the work.
+    # The processes report their statuses back with a multiprocessing queue (interprocess communication).
+    # The main process launches an additional thread to gather all status reports and displays a status bar with tqdm.
+    # We initialize the multiprocessing queue and the speech2text module globally,
+    # so that the forked processes can inherit it (otherwise it would be inefficiently pickled as a function argument).
+
     with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
-                             initargs=(q,speech2text)) as executor:
+                             initargs=(q, speech2text)) as executor:
         for start, end in zip(segments_i[:-1], segments_i[1:]):
             data_future = executor.submit(recognize_segment, speech, speech_len, start, end, chunk_length,
                                           progress, rate, quiet)
@@ -235,6 +244,7 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
     print(f'Wrote transcription to {output_file}.')
     os.remove(wavfile_path)
 
+# Transcribe a segment of speech, defined by start and end points
 def recognize_segment(speech, speech_len, start, end, chunk_length, progress, rate, quiet):
     segment_text = ''
     prev_lines = 0
@@ -253,7 +263,7 @@ def recognize_segment(speech, speech_len, start, end, chunk_length, progress, ra
         pbar_queue.put(1, block=False)
     return segment_text
 
-
+# This advances the recognition by one step
 def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rate,
                                chunk_length, is_final, debug_pos=False):
 
@@ -298,7 +308,7 @@ def list_microphones():
 
 
 # Stream audio data from a microphone to an espnet model
-# Chunksize should be atleats 6400 for a lookahead of 16 frames 
+# Chunksize should be at least 6400 for a lookahead of 16 frames
 def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, recording_format=pyaudio.paInt16,
                          samplerate=16000, chunksize=8192, save_debug_wav=False, exception_on_pyaudio_overflow=True,
                          finalize_update_iters=7):
