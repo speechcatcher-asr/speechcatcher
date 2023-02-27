@@ -31,18 +31,21 @@ from simple_endpointing import segment_wav
 
 pbar_queue = None
 speech2text_global = None
+speech_global = None
 
 tags = {
     "de_streaming_transformer_m": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024",
     "de_streaming_transformer_l": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024"}
 
 # See https://stackoverflow.com/questions/75193175/why-i-cant-use-multiprocessing-queue-with-processpoolexecutor
-def init_pool_processes(q, speech2text):
+def init_pool_processes(q, speech2text, speech):
     global pbar_queue
     global speech2text_global
+    global speech_global
 
     pbar_queue = q
     speech2text_global = speech2text
+    speech_global = speech
 
 
 # Ensure that the directory for the path f exists
@@ -187,21 +190,22 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
     # Note: we use a ProcessPoolExecutor to distribute the work.
     # The processes report their statuses back with a multiprocessing queue (interprocess communication).
     # The main process launches an additional thread to gather all status reports and displays a status bar with tqdm.
-    # We initialize the multiprocessing queue and the speech2text module globally,
-    # so that the forked processes can inherit it (otherwise it would be inefficiently pickled as a function argument).
+    # We initialize the multiprocessing queue, as well as the input speech and the speech2text module globally,
+    # so that the spawned/forked processes can share and reuse them (otherwise it would be inefficiently pickled
+    # as a function argument).
 
     with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
-                             initargs=(q, speech2text)) as executor:
+                             initargs=(q, speech2text, speech)) as executor:
+        if progress:
+            t = threading.Thread(target=progress_bar_output, args=(q, max_i))
+            t.start()
+
         for start, end in zip(segments_i[:-1], segments_i[1:]):
-            data_future = executor.submit(recognize_segment, speech, speech_len, start, end, chunk_length,
+            data_future = executor.submit(recognize_segment, speech_len, start, end, chunk_length,
                                           progress, rate, quiet)
             futures.append(data_future)
 
             seg_num += 1
-
-        if progress:
-            t = threading.Thread(target=progress_bar_output, args=(q, max_i))
-            t.start()
 
         # wait until all segments have been recognized
         concurrent.futures.wait(futures)
@@ -245,7 +249,7 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
     os.remove(wavfile_path)
 
 # Transcribe a segment of speech, defined by start and end points
-def recognize_segment(speech, speech_len, start, end, chunk_length, progress, rate, quiet):
+def recognize_segment(speech_len, start, end, chunk_length, progress, rate, quiet):
     segment_text = ''
     prev_lines = 0
 
@@ -255,7 +259,7 @@ def recognize_segment(speech, speech_len, start, end, chunk_length, progress, ra
         if speech_chunk_end > speech_len:
             speech_chunk_end = speech_len
 
-        speech_chunk = speech[speech_chunk_start: speech_chunk_end]
+        speech_chunk = speech_global[speech_chunk_start: speech_chunk_end]
 
         segment_text, prev_lines = batch_recognize_inner_loop(speech_chunk, i, prev_lines,
                                                               progress, quiet, rate, chunk_length,
