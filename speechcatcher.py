@@ -1,10 +1,13 @@
 # Note: the decoding implementation is inspired by the espnet example notebook released here:
 # https://github.com/espnet/notebook/blob/master/espnet2_streaming_asr_demo.ipynb
 #
-# However, the implementation here is substantially different and basically rewritten
+# However, the implementation here is substantially different and rewritten
 # Among other things, there is endpointing for the live and batch decoder. Threaded I/O for the microphone.
+# Multi-processing for long audio files.
+#
 # The notebook ( Apache-2.0 license ) was released with the clear intention of sharing how to use
 # streaming models with EspNet2.
+#
 
 import os
 import sys
@@ -20,13 +23,26 @@ import ffmpeg
 import torch
 from tqdm import tqdm
 import math
-
+import multiprocessing
+import concurrent
+import threading
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from simple_endpointing import segment_wav
+
+pbar_queue = None
+speech2text_global = None
 
 tags = {
     "de_streaming_transformer_m": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024",
     "de_streaming_transformer_l": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024"}
+
+#see https://stackoverflow.com/questions/75193175/why-i-cant-use-multiprocessing-queue-with-processpoolexecutor
+def init_pool_processes(q, speech2text):
+    global pbar_queue
+    global speech2text_global
+
+    pbar_queue = q
+    speech2text_global = speech2text
 
 
 # ensure that the directory for the path f exists
@@ -66,6 +82,13 @@ def delete_multiple_lines(n=1):
         sys.stdout.write("\x1b[1A")  # cursor up one line
     sys.stdout.write('\n\r')
 
+def progress_bar_output(q, max_i):
+    pbar = tqdm(total=max_i)
+    progress_i = 0
+    while progress_i < max_i:
+        q.get(block=True)
+        progress_i += 1
+        pbar.update(1)    
 
 # Output current hypothesis on the fly. Note that .
 def progress_output(text, prev_lines=0):
@@ -103,7 +126,7 @@ def is_completed(utterance):
 # Using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
 # progress mode: output transcription progress
-def recognize(speech2text, media_path, output_file='', quiet=False, progress=False):
+def recognize(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4):
     ensure_dir('.tmp/')
     wavfile_path = '.tmp/' + hashlib.sha1(args.inputfile.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
@@ -122,6 +145,7 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     speech = data.astype(np.float16) / 32767.0
     chunk_length = 8192
     speech_len = len(speech)
+    speech_len_frames = (speech_len / rate) * 100.
 
     prev_lines = 0
 
@@ -131,7 +155,10 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     if speech_len > 60.*rate:
         segments = segment_wav(wavfile_path)
 
-    segment_frame_pos_end = [segment[1] for segment in segments]
+    # Get positions where we want to finalize. Everying here is still measured in frames (100 per sec).
+    # Make sure the last segment is atleast 10 seconds long, otherwise merge it with the previous one.
+
+    segment_frame_pos_end = [segment[1] for segment in segments if segment[1] < speech_len_frames - 1000.]
     max_i = (speech_len // chunk_length) + 1
 
     # the segments from segment_wav are in frame positions (100 frames per second)
@@ -140,7 +167,7 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     segments_i = [-1] + [math.ceil((((f / 100.) * rate) - chunk_length) / chunk_length) for f in
                          segment_frame_pos_end] + [max_i]
 
-    # print('finalize iterations:', segments_i)
+    #print('finalize iterations:', segments_i)
 
     utterance_text = ''
     complete_text = ''
@@ -149,21 +176,48 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
 
     seg_num = 1
     seg_num_total = len(segments_i) - 1
-    for start, end in zip(segments_i[:-1], segments_i[1:]):
-        for i in tqdm(range(start + 1, end + 1), disable=not progress, desc=f'Segment {seg_num}/{seg_num_total}'):
-            speech_chunk_start = i * chunk_length
-            speech_chunk_end = (i + 1) * chunk_length
-            if speech_chunk_end > speech_len:
-                speech_chunk_end = speech_len
 
-            speech_chunk = speech[speech_chunk_start: speech_chunk_end]
+    futures = []
 
-            paragraphs, prev_lines = batch_recognize_inner_loop(speech2text, speech_chunk, i, paragraphs, prev_lines,
-                                                                progress, quiet, rate, chunk_length,
-                                                                utterance_text, is_final=i in segments_i)
-        seg_num += 1
+    q = multiprocessing.Queue()
 
-    complete_text = '\n\n'.join(paragraphs)
+    with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
+                             initargs=(q,speech2text)) as executor:
+        for start, end in zip(segments_i[:-1], segments_i[1:]):
+            data_future = executor.submit(recognize_segment, speech, speech_len, start, end, chunk_length,
+                                          progress, rate, quiet)
+            futures.append(data_future)
+
+            seg_num += 1
+
+        if progress:
+            t = threading.Thread(target=progress_bar_output, args=(q, max_i))
+            t.start()
+
+        # wait until all segments have been recognized
+        concurrent.futures.wait(futures)
+
+        for r in futures:
+            paragraphs.append(r.result())
+
+    merged_paragraphs = [paragraphs[0]] if len(paragraphs) > 0 else []
+
+    # Post-processing for paragraphs
+    # Merge paragraphs that shouldn't be separate segments
+    # Make sure the first letter of a paragraph is upper case
+    for prev_paragraph, paragraph in zip(paragraphs[:-1], paragraphs[1:]):
+        # with endpointing, it's likely that there is a pause between the segments
+        # here we actually check if the model thinks that this ending is also a sentence ending
+        # only add a paragraph to the text output if model and end pointer agree on the segment boundary
+        if is_completed(prev_paragraph):
+            # Make sure the paragraph starts with a capitalized letter
+            paragraph = upperCaseFirstLetter(paragraph)
+            merged_paragraphs += [paragraph]
+        else:
+            # might be in the middle of a sentence - append to the last (open) paragraph
+            merged_paragraphs[-1] += ' ' + paragraph
+
+    complete_text = '\n\n'.join(merged_paragraphs)
 
     print('\n')
 
@@ -181,55 +235,64 @@ def recognize(speech2text, media_path, output_file='', quiet=False, progress=Fal
     print(f'Wrote transcription to {output_file}.')
     os.remove(wavfile_path)
 
+def recognize_segment(speech, speech_len, start, end, chunk_length, progress, rate, quiet):
+    segment_text = ''
+    prev_lines = 0
 
-def batch_recognize_inner_loop(speech2text, speech_chunk, i, paragraphs, prev_lines, progress, quiet, rate,
-                               chunk_length, utterance_text, is_final, debug_pos=False):
-    # first calculate in seconds, then multiply with 100 to get the framepos (100 frames in one second.)
-    frame_pos = ((i + 1) * chunk_length / rate) * 100.
+    for i in range(start + 1, end + 1):
+        speech_chunk_start = i * chunk_length
+        speech_chunk_end = (i + 1) * chunk_length
+        if speech_chunk_end > speech_len:
+            speech_chunk_end = speech_len
+
+        speech_chunk = speech[speech_chunk_start: speech_chunk_end]
+
+        segment_text, prev_lines = batch_recognize_inner_loop(speech_chunk, i, prev_lines,
+                                                              progress, quiet, rate, chunk_length,
+                                                              is_final=(i == end))
+        pbar_queue.put(1, block=False)
+    return segment_text
+
+
+def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rate,
+                               chunk_length, is_final, debug_pos=False):
+
     if is_final and debug_pos:
-        print('is final @', f'{i}', f'{frame_pos}')
+       # first calculate in seconds, then multiply with 100 to get the framepos (100 frames in one second.)
+       frame_pos = ((i + 1) * chunk_length / rate) * 100.
+       print('is final @', f'{i}', f'{frame_pos}')
 
-    results = speech2text(speech=speech_chunk, is_final=is_final)
-    if results is not None and len(results) > 0:
-        nbests = [text for text, token, token_int, hyp in results]
-        utterance_text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
-        if not (quiet or progress):
-            prev_lines = progress_output(nbests[0], prev_lines)
+    results = speech2text_global(speech=speech_chunk, is_final=is_final)
+    utterance_text = ''
+
+    if quiet or progress:
+        if is_final:
+            nbests = [text for text, token, token_int, hyp in results]
+            utterance_text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
     else:
-        if not (quiet or progress):
+        if results is not None and len(results) > 0:
+            nbests = [text for text, token, token_int, hyp in results]
+            utterance_text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
+            prev_lines = progress_output(nbests[0], prev_lines)
+        else:
             prev_lines = progress_output("", prev_lines)
-        utterance_text = ''
 
     if is_final:
         prev_lines = 0
 
-        # with endpointing, it's likely that there is a pause between the segments
-        # here we actually check if the model thinks that this ending is also a sentence ending
-        # only add a paragraph to the text output if model and end pointer agree on the segment boundary
-        prev_utterance_is_completed = True
-        if len(paragraphs) > 0:
-            prev_utterance_is_completed = is_completed(paragraphs[-1])
-        if prev_utterance_is_completed:
-            # Make sure the paragraph starts with a capitalized letter
-            utterance_text = upperCaseFirstLetter(utterance_text)
-            paragraphs += [utterance_text]
-        else:
-            # might be in the middle of a sentence - append to the last (open) paragraph
-            paragraphs[-1] += ' ' + utterance_text
-
         if not (quiet or progress) and is_completed(utterance_text):
             sys.stdout.write('\n')
 
-    return paragraphs, prev_lines
+    return utterance_text, prev_lines
 
 
 # List all available microphones on this system
 def list_microphones():
     p = pyaudio.PyAudio()
     info = p.get_host_api_info_by_index(0)
-    numdevices = info.get('deviceCount')
+    num_devices = info.get('deviceCount')
 
-    for i in range(0, numdevices):
+    for i in range(0, num_devices):
         if (p.get_device_info_by_host_api_device_index(0, i).get('maxInputChannels')) > 0:
             print("Input Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
 
@@ -319,18 +382,23 @@ if __name__ == '__main__':
     parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_l',
                         help='Choose a model: de_streaming_transformer_m or de_streaming_transformer_l', type=str)
     parser.add_argument('-d', '--device', dest='device', default='cpu',
-                        help="Computation device. Either 'cpu' or 'cuda'. Note: Mac M1 / mps support isn't available yet.")
+                        help="Computation device. Either 'cpu' or 'cuda'."
+                             " Note: Mac M1 / mps support isn't available yet.")
     parser.add_argument('--lang', dest='language', default='',
-                        help='Explicity set language, default is empty = deduct languagefrom model tag', type=str)
+                        help='Explicitly set language, default is empty = deduct language from model tag', type=str)
     parser.add_argument('-b', '--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=5)
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file',
                         action='store_true')
-    parser.add_argument('--progress', dest='progress', help='Show progress when transcribing a media file',
+    parser.add_argument('--no-progress', dest='no_progress', help='Show no progress bar when transcribing a media file',
                         action='store_true')
     parser.add_argument('--save-debug-wav', dest='save_debug_wav',
                         help='Save recording to debug.wav, only applicable to live decoding', action='store_true')
     parser.add_argument('--num-threads', dest='num_threads', default=1,
                         help='Set number of threads used for intraop parallelism on CPU in pytorch.', type=int)
+    parser.add_argument('-n', '--num-processes', dest='num_processes', default=-1,
+                        help='Set number of processes used for processing long audio files in parallel'
+                             ' (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count()',
+                        type=int)
 
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
@@ -339,12 +407,19 @@ if __name__ == '__main__':
     if args.num_threads != -1:
         torch.set_num_threads(args.num_threads)
 
+    num_processes = multiprocessing.cpu_count()
+    if args.num_processes != -1:
+        num_processes = args.num_processes
+
     if args.model not in tags:
         print(f'Model {args.model} is not a valid model!')
         print('Options are:', ', '.join(tags.keys()))
 
+    quiet = args.quiet or num_processes > 1
+    progress = not args.no_progress
+
     tag = tags[args.model]
-    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=args.quiet or args.progress)
+    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress)
 
     args = parser.parse_args()
 
@@ -352,6 +427,6 @@ if __name__ == '__main__':
         recognize_microphone(speech2text, tag, record_max_seconds=args.max_record_time,
                              save_debug_wav=args.save_debug_wav)
     elif args.inputfile != '':
-        recognize(speech2text, args.inputfile, quiet=args.quiet, progress=args.progress)
+        recognize(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes)
     else:
         parser.print_help()
