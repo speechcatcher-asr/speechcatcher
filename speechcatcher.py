@@ -194,11 +194,12 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
     # so that the spawned/forked processes can share and reuse them (otherwise it would be inefficiently pickled
     # as a function argument).
 
+    if progress:
+        t = threading.Thread(target=progress_bar_output, args=(q, max_i))
+        t.start()
+
     with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
                              initargs=(q, speech2text, speech)) as executor:
-        if progress:
-            t = threading.Thread(target=progress_bar_output, args=(q, max_i))
-            t.start()
 
         for start, end in zip(segments_i[:-1], segments_i[1:]):
             data_future = executor.submit(recognize_segment, speech_len, start, end, chunk_length,
