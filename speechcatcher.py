@@ -265,7 +265,8 @@ def recognize_segment(speech_len, start, end, chunk_length, progress, rate, quie
         segment_text, prev_lines = batch_recognize_inner_loop(speech_chunk, i, prev_lines,
                                                               progress, quiet, rate, chunk_length,
                                                               is_final=(i == end))
-        pbar_queue.put(1, block=False)
+        if progress:
+            pbar_queue.put(1, block=False)
     return segment_text
 
 # This advances the recognition by one step
