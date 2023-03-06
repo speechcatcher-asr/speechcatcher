@@ -27,7 +27,7 @@ import multiprocessing
 import concurrent
 import threading
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from simple_endpointing import segment_wav
+from simple_endpointing import segment_speech
 
 pbar_queue = None
 speech2text_global = None
@@ -129,7 +129,7 @@ def is_completed(utterance):
 # Using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
 # progress mode: output transcription progress
-def recognize(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4):
+def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4):
     ensure_dir('.tmp/')
     wavfile_path = '.tmp/' + hashlib.sha1(args.inputfile.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
@@ -140,27 +140,45 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
         rate = wavfile_in.getframerate()
         nframes = wavfile_in.getnframes()
         buf = wavfile_in.readframes(-1)
-        data = np.frombuffer(buf, dtype='int16')
+        raw_speech_data = np.frombuffer(buf, dtype='int16')
 
-    assert (rate == 16000)
-
-    # 32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
-    speech = data.astype(np.float16) / 32767.0
     chunk_length = 8192
+
+    complete_text = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet)
+
+    # Automatically generate output .txt name from media_path if it isnt set
+    # media_path can also be an URL, in that case it needs special handling
+    if output_file == '':
+        if media_path.startswith('http://') or media_path.startswith('https://'):
+            output_file = media_path.split('/')[-1] + '.txt'
+        else:
+            output_file = media_path + '.txt'
+
+    with open(output_file, 'w') as output_file_out:
+        output_file_out.write(complete_text)
+
+    print(f'Wrote transcription to {output_file}.')
+    os.remove(wavfile_path)
+
+# Recgonize the speech in 'raw_speech_data' with sampling rate 'rate' using the model in 'speech2text'.
+# The rawspeech data should be a numpy array of dtype='int16'
+
+def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_processes=1, progress=True, quiet=False):
+    # 32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
+    speech = raw_speech_data.astype(np.float16) / 32767.0
+
     speech_len = len(speech)
     speech_len_frames = (speech_len / rate) * 100.
-
-    prev_lines = 0
+    assert (rate == 16000)
 
     segments = []
 
     # segment audio files longer than a minute
-    if speech_len > 60.*rate:
-        segments = segment_wav(wavfile_path)
+    if speech_len > 60. * rate:
+        segments = segment_speech(raw_speech_data, rate)
 
     # Get positions where we want to finalize. Everything here is still measured in frames (100 frames per sec).
     # Make sure the last segment is at least 10 seconds long, otherwise merge it with the previous one.
-
     segment_frame_pos_end = [segment[1] for segment in segments if segment[1] < speech_len_frames - 1000.]
     max_i = (speech_len // chunk_length) + 1
 
@@ -168,22 +186,16 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
     # with the given chunksize, we calculate the iterations here where we need to finalize
     # note: we do not finalize at the beginning, but at -1 to easily calculate start
     # and end positions for the loop below.
-
     segments_i = [-1] + [math.ceil((((f / 100.) * rate) - chunk_length) / chunk_length) for f in
                          segment_frame_pos_end] + [max_i]
-
-    #print('finalize iterations:', segments_i)
-
+    # print('finalize iterations:', segments_i)
     utterance_text = ''
     complete_text = ''
     paragraphs = []
     speech_len = len(speech)
-
     seg_num = 1
     seg_num_total = len(segments_i) - 1
-
     futures = []
-
     q = multiprocessing.Queue()
 
     # Run the transcription of segments in parallel with multiple processes.
@@ -193,11 +205,9 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
     # We initialize the multiprocessing queue, as well as the input speech and the speech2text module globally,
     # so that the spawned/forked processes can share and reuse them (otherwise it would be inefficiently pickled
     # as a function argument).
-
     if progress:
         t = threading.Thread(target=progress_bar_output, args=(q, max_i))
         t.start()
-
     with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
                              initargs=(q, speech2text, speech)) as executor:
 
@@ -213,7 +223,6 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
 
         for r in futures:
             paragraphs.append(r.result())
-
     merged_paragraphs = [paragraphs[0]] if len(paragraphs) > 0 else []
 
     # Post-processing for paragraphs
@@ -230,24 +239,10 @@ def recognize(speech2text, media_path, output_file='', quiet=True, progress=True
         else:
             # might be in the middle of a sentence - append to the last (open) paragraph
             merged_paragraphs[-1] += ' ' + paragraph
-
     complete_text = '\n\n'.join(merged_paragraphs)
-
     print('\n')
+    return complete_text
 
-    # Automatically generate output .txt name from media_path if it isnt set
-    # media_path can also be an URL, in that case it needs special handling
-    if output_file == '':
-        if media_path.startswith('http://') or media_path.startswith('https://'):
-            output_file = media_path.split('/')[-1] + '.txt'
-        else:
-            output_file = media_path + '.txt'
-
-    with open(output_file, 'w') as output_file_out:
-        output_file_out.write(complete_text)
-
-    print(f'Wrote transcription to {output_file}.')
-    os.remove(wavfile_path)
 
 # Transcribe a segment of speech, defined by start and end points
 def recognize_segment(speech_len, start, end, chunk_length, progress, rate, quiet):
@@ -443,6 +438,6 @@ if __name__ == '__main__':
         recognize_microphone(speech2text, tag, record_max_seconds=args.max_record_time,
                              save_debug_wav=args.save_debug_wav)
     elif args.inputfile != '':
-        recognize(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes)
+        recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes)
     else:
         parser.print_help()
