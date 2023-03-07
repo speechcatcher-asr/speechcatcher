@@ -50,6 +50,8 @@ To use speechcatcher in your Python script:
     
     text = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
 
+Currently, you would need to put your script into the same folder as speechcatcher.py, but this might be fixed in an upcoming release when speechcatcher is a proper Python module.
+
 ## Speechcatcher training
 
 Speechcatcher models are trained by using Whisper large as a teacher model:
