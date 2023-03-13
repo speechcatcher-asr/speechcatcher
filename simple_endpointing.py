@@ -25,11 +25,17 @@ from python_speech_features import logfbank
 from scipy.ndimage import gaussian_filter1d
 import numpy as np
 
-# All timing are in frames, where one frame is 0.01 seconds.
 def segment_wav(wav_filename, beam_size=10, ideal_segment_len=1000*4,
                 max_lookahead=100*180, min_len=1000*2, step=10, len_reward = 40, debug=False):
 
     samplerate, data = wavfile.read(wav_filename, mmap=False)
+    segment_speech(samplerate, data, beam_size, ideal_segment_len,
+                max_lookahead, min_len, step, len_reward, debug)
+
+# All timing are in frames, where one frame is 0.01 seconds.
+def segment_speech(data, samplerate, beam_size=10, ideal_segment_len=1000*4,
+                max_lookahead=100*180, min_len=1000*2, step=10, len_reward = 40, debug=False):
+
     fbank_feat = logfbank(data, samplerate=samplerate, winlen=0.025, winstep=0.01)
     fbank_feat_power = fbank_feat.sum(axis=-1) / 10.
     
