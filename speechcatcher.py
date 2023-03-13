@@ -1,7 +1,10 @@
+# Speechcatcher command line interface. Decode speech with speechcatcher streaming models. This tool can decode 
+# either media files (any fileformat that ffmpeg supports) or live speech from a microphone.
+#
 # Note: the decoding implementation is inspired by the espnet example notebook released here:
 # https://github.com/espnet/notebook/blob/master/espnet2_streaming_asr_demo.ipynb
 #
-# However, the implementation here is substantially different and rewritten
+# However, the implementation here is rewritten and substantially different
 # Among other things, there is endpointing for the live and batch decoder. Threaded I/O for the microphone.
 # Multi-processing for long audio files.
 #
