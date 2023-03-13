@@ -422,17 +422,26 @@ if __name__ == '__main__':
         torch.set_num_threads(args.num_threads)
 
     num_processes = multiprocessing.cpu_count()
+
+    # use n/2 as default for multi core machines with cores > 2 
+    num_processes = num_processes // 2 if num_processes > 2 else num_processes
+
     if args.num_processes != -1:
         num_processes = args.num_processes
 
     if args.model not in tags:
         print(f'Model {args.model} is not a valid model!')
         print('Options are:', ', '.join(tags.keys()))
+        sys.exit(-1)
+    else:
+        tag = tags[args.model]
+        print('Using model: ', tag)
+        if not args.live:
+            print(f'Using {num_processes} processes for decoding. You can change this setting with the -n parameter option.')
 
     quiet = args.quiet or num_processes > 1
     progress = not args.no_progress
 
-    tag = tags[args.model]
     speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress)
 
     args = parser.parse_args()
