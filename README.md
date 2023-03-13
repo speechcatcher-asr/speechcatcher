@@ -42,6 +42,16 @@ or to transcribe data live from your microphone:
 
 All required model files are downloaded automatically and placed into a ".cache" directory.
 
+To use speechcatcher in your Python script:
+
+    import speechcatcher
+    short_tag = 'de_streaming_transformer_m'
+    speech2text = speechcatcher.load_model(speechcatcher.tags[short_tag])
+    
+    text = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
+
+Currently, you would need to put your script into the same folder as speechcatcher.py, but this might be fixed in an upcoming release when speechcatcher is a proper Python module.
+
 ## Speechcatcher training
 
 Speechcatcher models are trained by using Whisper large as a teacher model:
