@@ -52,6 +52,47 @@ To use speechcatcher in your Python script:
 
 Currently, you would need to put your script into the same folder as speechcatcher.py, but this might be fixed in an upcoming release when speechcatcher is a proper Python module.
 
+## Available models
+
+| Acoustic model | Training data (hours) | Tuda test WER (without LM) | CER |
+| --- | --- | --- | --- |
+| de_streaming_transformer_m | 13k | 11.57 | 3.38 |
+| de_streaming_transformer_l | 13k | 9.65 | 2.76 |
+| de_streaming_transformer_xl | 26k | coming | soon! | 
+| --- | --- | --- | --- |
+| whisper large | ? | coming | soon! | 
+
+## Speechcatcher CLI parameters
+
+    usage: speechcatcher.py [-h] [-l] [-t MAX_RECORD_TIME] [-m MODEL] [-d DEVICE] [--lang LANGUAGE] [-b BEAMSIZE] [--quiet] [--no-progress] [--save-debug-wav] [--num-threads NUM_THREADS] [-n NUM_PROCESSES] [inputfile]
+
+    Speechcatcher utility to decode speech with speechcatcher espnet models.
+
+    positional arguments:
+      inputfile             Input media file
+
+    options:
+      -h, --help            show this help message and exit
+      -l, --live-transcription
+                            Use microphone for live transcription
+      -t MAX_RECORD_TIME, --max-record-time MAX_RECORD_TIME
+                            Maximum record time in seconds (live transcription).
+      -m MODEL, --model MODEL
+                            Choose a model: de_streaming_transformer_m or de_streaming_transformer_l
+      -d DEVICE, --device DEVICE
+                            Computation device. Either 'cpu' or 'cuda'. Note: Mac M1 / mps support isn't available yet.
+      --lang LANGUAGE       Explicitly set language, default is empty = deduct language from model tag
+      -b BEAMSIZE, --beamsize BEAMSIZE
+                            Beam size for the decoder
+      --quiet               No partial transcription output when transcribing a media file
+      --no-progress         Show no progress bar when transcribing a media file
+      --save-debug-wav      Save recording to debug.wav, only applicable to live decoding
+      --num-threads NUM_THREADS
+                            Set number of threads used for intraop parallelism on CPU in pytorch.
+      -n NUM_PROCESSES, --num-processes NUM_PROCESSES
+                            Set number of processes used for processing long audio files in parallel (the input file needs to be long enough).
+                            If set to -1, use multiprocessing.cpu_count() divided by two.
+
 ## Speechcatcher training
 
 Speechcatcher models are trained by using Whisper large as a teacher model:
