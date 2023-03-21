@@ -16,7 +16,8 @@ import os
 import sys
 import argparse
 import hashlib
-from espnet2.bin.asr_inference_streaming import Speech2TextStreaming
+#from espnet2.bin.asr_inference_streaming import Speech2TextStreaming
+from asr_inference_streaming import Speech2TextStreaming
 from espnet_model_zoo.downloader import ModelDownloader
 import numpy as np
 import wave
@@ -26,9 +27,11 @@ import ffmpeg
 import torch
 from tqdm import tqdm
 import math
+import json
 import multiprocessing
 import concurrent
 import threading
+import itertools
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from simple_endpointing import segment_speech
 
@@ -146,21 +149,30 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
         raw_speech_data = np.frombuffer(buf, dtype='int16')
 
     chunk_length = 8192
-
-    complete_text = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet)
+    complete_text, paragraphs, paragraphs_tokens, paragraph_hyps, segments_start_end_in_seconds = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet)
 
     # Automatically generate output .txt name from media_path if it isnt set
     # media_path can also be an URL, in that case it needs special handling
     if output_file == '':
         if media_path.startswith('http://') or media_path.startswith('https://'):
-            output_file = media_path.split('/')[-1] + '.txt'
+            output_file_txt = media_path.split('/')[-1] + '.txt'
+            output_file_json = media_path.split('/')[-1] + '.json'
         else:
-            output_file = media_path + '.txt'
+            output_file_txt = media_path + '.txt'
+            output_file_json = media_path + '.json'
+    else:
+        output_file_txt = output_file + '.txt'
+        output_file_json = output_file + '.json'
 
-    with open(output_file, 'w') as output_file_out:
-        output_file_out.write(complete_text)
+    with open(output_file_txt, 'w') as output_file_txt_out:
+        output_file_txt_out.write(complete_text)
 
-    print(f'Wrote transcription to {output_file}.')
+    with open(output_file_json, 'w') as output_file_json_out:
+        complete_json = {"complete_text":complete_text, "segments_start_end_in_seconds":segments_start_end_in_seconds,
+                        "segments":paragraphs, "segment_tokens":paragraphs_tokens}
+        output_file_json_out.write(json.dumps(complete_json, indent=4))
+
+    print(f'Wrote transcription to {output_file_txt} and {output_file_json}.')
     os.remove(wavfile_path)
 
 # Recgonize the speech in 'raw_speech_data' with sampling rate 'rate' using the model in 'speech2text'.
@@ -185,6 +197,9 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
     segment_frame_pos_end = [segment[1] for segment in segments if segment[1] < speech_len_frames - 1000.]
     max_i = (speech_len // chunk_length) + 1
 
+    segments_in_seconds = [0] + [f / 100. for f in segment_frame_pos_end] + [speech_len /rate]
+    segments_in_seconds_start_end = list(zip(segments_in_seconds[:-1], segments_in_seconds[1:]))
+
     # The segments from segment_wav are in frame positions (100 frames per second)
     # with the given chunksize, we calculate the iterations here where we need to finalize
     # note: we do not finalize at the beginning, but at -1 to easily calculate start
@@ -194,7 +209,7 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
     # print('finalize iterations:', segments_i)
     utterance_text = ''
     complete_text = ''
-    paragraphs = []
+    paragraphs_raw = []
     speech_len = len(speech)
     seg_num = 1
     seg_num_total = len(segments_i) - 1
@@ -214,7 +229,8 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
     with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
                              initargs=(q, speech2text, speech)) as executor:
 
-        for start, end in zip(segments_i[:-1], segments_i[1:]):
+        start_end_positions = zip(segments_i[:-1], segments_i[1:])
+        for start, end in start_end_positions:
             data_future = executor.submit(recognize_segment, speech_len, start, end, chunk_length,
                                           progress, rate, quiet)
             futures.append(data_future)
@@ -225,7 +241,21 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
         concurrent.futures.wait(futures)
 
         for r in futures:
-            paragraphs.append(r.result())
+            paragraphs_raw.append(r.result())
+
+    paragraphs = [elem[0] for elem in paragraphs_raw] 
+
+    paragraphs_tokens = [elem[1] for elem in paragraphs_raw]
+    paragraphs_pos = [elem[2] for elem in paragraphs_raw]
+
+    merged_paragraphs_tokens = list(itertools.chain(*[elem[1] for elem in paragraphs_raw]))
+    merged_paragraphs_pos = list(itertools.chain(*[elem[2] for elem in paragraphs_raw]))
+
+    paragraph_hyps = [elem[3] for elem in paragraphs_raw]
+
+    assert(len(merged_paragraphs_tokens) == len(merged_paragraphs_pos))
+
+    merged_paragraphs_json = zip(merged_paragraphs_tokens, merged_paragraphs_pos)
     merged_paragraphs = [paragraphs[0]] if len(paragraphs) > 0 else []
 
     # Post-processing for paragraphs
@@ -244,7 +274,7 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
             merged_paragraphs[-1] += ' ' + paragraph
     complete_text = '\n\n'.join(merged_paragraphs)
     print('\n')
-    return complete_text
+    return complete_text, paragraphs, paragraphs_tokens, paragraph_hyps, segments_in_seconds_start_end
 
 
 # Transcribe a segment of speech, defined by start and end points
@@ -276,17 +306,28 @@ def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rat
        frame_pos = ((i + 1) * chunk_length / rate) * 100.
        print('is final @', f'{i}', f'{frame_pos}')
 
-    results = speech2text_global(speech=speech_chunk, is_final=is_final)
+    results = speech2text_global(speech=speech_chunk, is_final=is_final, always_assemble_hyps= not (quiet or progress))
     utterance_text = ''
+    utterance_token = []
+    utterance_pos = []
+    utterance_hyp = {}
 
     if quiet or progress:
         if is_final:
-            nbests = [text for text, token, token_int, hyp in results]
-            utterance_text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
+            #nbests = [text for text, token, token_int, hyp in results]
+            
+            utterance_text = results[0][0] if results is not None and len(results) > 0 else ""
+            utterance_token = results[0][1] if results is not None and len(results) > 0 else []
+            utterance_pos = results[0][-2] if results is not None and len(results) > 0 else []
+            utterance_hyp = results[0][-3] if results is not None and len(results) > 0 else {}
     else:
         if results is not None and len(results) > 0:
-            nbests = [text for text, token, token_int, hyp in results]
-            utterance_text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
+            #nbests = [text, tokenpos for text, token, token_int, token_pos, hyp in results]
+            utterance_text = results[0][0] #nbests[0] if nbests is not None and len(nbests) > 0 else ""
+            utterance_token = results[0][1]
+            utterance_pos = results[0][-2]
+            utterance_hyp = results[0][-3]            
+
             prev_lines = progress_output(nbests[0], prev_lines)
         else:
             prev_lines = progress_output("", prev_lines)
@@ -297,7 +338,7 @@ def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rat
         if not (quiet or progress) and is_completed(utterance_text):
             sys.stdout.write('\n')
 
-    return utterance_text, prev_lines
+    return [utterance_text, utterance_token, utterance_pos, utterance_hyp], prev_lines
 
 
 # List all available microphones on this system
@@ -361,12 +402,13 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
             results = speech2text(speech=data, is_final=finalize_iteration)
 
             if results is not None and len(results) > 0:
-                nbests = [text for text, token, token_int, hyp in results]
-                nbest_len = len(nbests[0])
+                #nbests = [text for text, token, token_int, hyp in results]
+                nbests0 = results[0][0]
+                nbest_len = len(nbests0)
                 n_best_lens += [nbest_len]
 
-                text = nbests[0] if nbests is not None and len(nbests) > 0 else ""
-                prev_lines = progress_output(nbests[0], prev_lines)
+                text = nbests0
+                prev_lines = progress_output(text, prev_lines)
             else:
                 prev_lines = progress_output("", prev_lines)
 
@@ -411,7 +453,8 @@ if __name__ == '__main__':
                         help='Set number of threads used for intraop parallelism on CPU in pytorch.', type=int)
     parser.add_argument('-n', '--num-processes', dest='num_processes', default=-1,
                         help='Set number of processes used for processing long audio files in parallel'
-                             ' (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count()',
+                             ' (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() '
+                             'divided by two.',
                         type=int)
 
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
