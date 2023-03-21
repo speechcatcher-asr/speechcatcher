@@ -1,3 +1,5 @@
+# Slightly adapted from https://raw.githubusercontent.com/espnet/espnet/master/espnet2/bin/asr_inference_streaming.py
+# Apache license
 #!/usr/bin/env python3
 import argparse
 import logging
@@ -291,7 +293,7 @@ class Speech2TextStreaming:
 
     @torch.no_grad()
     def __call__(
-        self, speech: Union[torch.Tensor, np.ndarray], is_final: bool = True
+        self, speech: Union[torch.Tensor, np.ndarray], is_final: bool = True, always_assemble_hyps: bool = True,
     ) -> List[Tuple[Optional[str], List[str], List[int], Hypothesis]]:
         """Inference
 
@@ -325,7 +327,10 @@ class Speech2TextStreaming:
                 minlenratio=self.minlenratio,
                 is_final=is_final,
             )
-            ret = self.assemble_hyps(nbest_hyps)
+            if always_assemble_hyps or is_final:
+                ret = self.assemble_hyps(nbest_hyps)
+            else:
+                ret = []
         else:
             ret = []
 
@@ -333,14 +338,18 @@ class Speech2TextStreaming:
             self.reset()
         return ret
 
-    def assemble_hyps(self, hyps):
-        nbest_hyps = hyps[: self.nbest]
+    def assemble_hyps(self, hyps, with_timings=True):
+        nbest_hyps = hyps[: 1] #self.nbest]
         results = []
         for hyp in nbest_hyps:
             assert isinstance(hyp, Hypothesis), type(hyp)
 
             # remove sos/eos and get results
             token_int = hyp.yseq[1:-1].tolist()
+
+            # token positions
+            if with_timings:
+                token_pos = [i for i,x in enumerate(token_int) if x != 0]
 
             # remove blank symbol id, which is assumed to be 0
             token_int = list(filter(lambda x: x != 0, token_int))
@@ -352,7 +361,7 @@ class Speech2TextStreaming:
                 text = self.tokenizer.tokens2text(token)
             else:
                 text = None
-            results.append((text, token, token_int, hyp))
+            results.append((text, token, token_int, token_pos, hyp))
 
         assert check_return_type(results)
         return results
