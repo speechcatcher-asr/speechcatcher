@@ -99,6 +99,8 @@ Speechcatcher models are trained by using Whisper large as a teacher model:
 
 ![Speechcatcher Teacher/student training](https://github.com/speechcatcher-asr/speechcatcher/raw/main/speechcatcher_training.svg)
 
+See [https://github.com/speechcatcher-asr/speechcatcher-data](speechcatcher-data) for code and more info on replicating the training process.
+
 ## Citation
 
 If you use speechcatcher models in your research, for now just cite this repository:
