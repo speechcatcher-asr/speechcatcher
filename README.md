@@ -16,7 +16,13 @@ on Linux:
     
     sudo apt-get install portaudio19-dev python3.10-dev ffmpeg
 
-Create a virtual environment:
+For a system-wide and global installation, simply do:
+
+    pip3 install git+https://github.com/speechcatcher-asr/speechcatcher
+
+## Virtual environment
+
+If you prefer an installation in a virtual environment, create one first:
 
     virtualenv -p python3.10 speechcatcher_env
 
@@ -28,29 +34,31 @@ Activate it:
 
     source speechcatcher_env/bin/activate
 
-Then install the requirements:
+Then install speechcatcher:
 
-    pip3 install -r requirements.txt
-   
-Done! You can then run speechcatcher with:
+    pip3 install git+https://github.com/speechcatcher-asr/speechcatcher
 
-    python3 speechcatcher.py media_file.mp4
+## Run speechcatcher from the command line
+
+After you have succesfully installed speechcatcher, you can decode any media file with:
+
+    speechcatcher media_file.mp4
 
 or to transcribe data live from your microphone:
 
-    python3 speechcatcher.py -l
+    speechcatcher -l
 
 All required model files are downloaded automatically and placed into a ".cache" directory.
 
-To use speechcatcher in your Python script:
+## Use speechcatcher in your Python code
+
+To use speechcatcher in your Python script import the speechcatcher package and use the recognize function:
 
     import speechcatcher
     short_tag = 'de_streaming_transformer_m'
     speech2text = speechcatcher.load_model(speechcatcher.tags[short_tag])
     
     text = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
-
-Currently, you would need to put your script into the same folder as speechcatcher.py, but this might be fixed in an upcoming release when speechcatcher is a proper Python module.
 
 ## Available models
 
