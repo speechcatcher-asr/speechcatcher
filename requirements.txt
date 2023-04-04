@@ -1,7 +1,7 @@
 torch
 torchaudio
 ffmpeg-python
-git+https://github.com/speechcatcher-asr/espnet
+espnet @ git+https://github.com/speechcatcher-asr/espnet
 espnet_model_zoo
 soundfile
 six
