@@ -427,8 +427,7 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
     print("\nMaximum recording time reached, exiting.")
 
 
-if __name__ == '__main__':
-
+def main():
     parser = argparse.ArgumentParser(
         description='Speechcatcher utility to decode speech with speechcatcher espnet models.')
     parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription',
@@ -496,3 +495,6 @@ if __name__ == '__main__':
         recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes)
     else:
         parser.print_help()
+
+if __name__ == '__main__':
+    main()
