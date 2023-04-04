@@ -17,7 +17,7 @@ import sys
 import argparse
 import hashlib
 #from espnet2.bin.asr_inference_streaming import Speech2TextStreaming
-from asr_inference_streaming import Speech2TextStreaming
+from speechcatcher.asr_inference_streaming import Speech2TextStreaming
 from espnet_model_zoo.downloader import ModelDownloader
 import numpy as np
 import wave
@@ -33,7 +33,7 @@ import concurrent
 import threading
 import itertools
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from simple_endpointing import segment_speech
+from speechcatcher.simple_endpointing import segment_speech
 
 pbar_queue = None
 speech2text_global = None
