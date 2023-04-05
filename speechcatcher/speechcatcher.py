@@ -352,9 +352,9 @@ def list_microphones():
             print('Input Device id ', i, ' - ', p.get_device_info_by_host_api_device_index(0, i).get('name'))
 
 # This gives the user a helpful error message and advices the user on possible solutions when we encounter an "input overflow".
-def stream_read_with_exception(stream, chunksize, exception_on_pyaudio_overflow=True):
+def stream_read_with_exception(stream, chunksize, exception_on_overflow=True):
     try:
-        data = stream.read(chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
+        data = stream.read(chunksize, exception_on_overflow=exception_on_overflow)
     except OSError as e:
         if 'Input overflowed' in str(e):
             print('Input overflowed while trying to fetch new data from your microphone.')
