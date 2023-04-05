@@ -27,3 +27,4 @@ jobs:
       run: |
         which speechcatcher
         speechcatcher --help
+        speechcatcher https://upload.wikimedia.org/wikipedia/commons/6/65/LibriVox_-_Fontane_Herr_von_Ribbeck.ogg
