@@ -137,7 +137,7 @@ def is_completed(utterance):
 # progress mode: output transcription progress
 def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4):
     ensure_dir('.tmp/')
-    wavfile_path = '.tmp/' + hashlib.sha1(args.inputfile.encode("utf-8")).hexdigest() + '.wav'
+    wavfile_path = '.tmp/' + hashlib.sha1(media_path.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
 
     with wave.open(wavfile_path, 'rb') as wavfile_in:
