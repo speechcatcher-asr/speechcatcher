@@ -352,11 +352,12 @@ def list_microphones():
             print('Input Device id ', i, ' - ', p.get_device_info_by_host_api_device_index(0, i).get('name'))
 
 # This gives the user a helpful error message and advices the user on possible solutions when we encounter an "input overflow".
-def stream_read_with_exception(stream, chunksize, exception_on_overflow=True):
+def stream_read_with_exception(stream, chunksize, prev_lines, exception_on_overflow=True):
     try:
         data = stream.read(chunksize, exception_on_overflow=exception_on_overflow)
     except OSError as e:
         if 'Input overflowed' in str(e):
+            print('\n')
             print('Input overflowed while trying to fetch new data from your microphone.')
             print('This happens when the online recognition was not fast enough to decode speech in realtime.')
             print('---')
@@ -366,6 +367,7 @@ def stream_read_with_exception(stream, chunksize, exception_on_overflow=True):
             print('Solution 2: Try to reduce the beamsize, for example with: speechcatcher -l -b 1. A smaller beamsize means faster decoding with slightly less accuracy.')
             print('and/or')
             print('Solution 3: Try to use a smaller and faster model.')
+            print(prev_lines*'\n')
         else:
             # handle other types of OS errors
             print("An OS error occurred:", e)
@@ -390,11 +392,11 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
     prev_lines = 0
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        data_future = executor.submit(stream_read_with_exception, stream, chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
+        data_future = executor.submit(stream_read_with_exception, stream, chunksize, prev_lines, exception_on_overflow=exception_on_pyaudio_overflow)
         for i in range(0, int(samplerate / chunksize * record_max_seconds) + 1):
 
             data = data_future.result(timeout=2)
-            data_future = executor.submit(stream_read_with_exception, stream, chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
+            data_future = executor.submit(stream_read_with_exception, stream, chunksize, prev_lines, exception_on_overflow=exception_on_pyaudio_overflow)
 
             data = np.frombuffer(data, dtype='int16')
             if save_debug_wav:
