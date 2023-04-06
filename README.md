@@ -72,7 +72,7 @@ To use speechcatcher in your Python script import the speechcatcher package and 
 
 ## Speechcatcher CLI parameters
 
-    usage: speechcatcher.py [-h] [-l] [-t MAX_RECORD_TIME] [-m MODEL] [-d DEVICE] [--lang LANGUAGE] [-b BEAMSIZE] [--quiet] [--no-progress] [--save-debug-wav] [--num-threads NUM_THREADS] [-n NUM_PROCESSES] [inputfile]
+    usage: speechcatcher [-h] [-l] [-t MAX_RECORD_TIME] [-m MODEL] [-d DEVICE] [--lang LANGUAGE] [-b BEAMSIZE] [--quiet] [--no-progress] [--save-debug-wav] [--num-threads NUM_THREADS] [-n NUM_PROCESSES] [inputfile]
 
     Speechcatcher utility to decode speech with speechcatcher espnet models.
 
