@@ -16,6 +16,15 @@ import os
 import sys
 import argparse
 import hashlib
+import warnings
+import math
+import json
+import multiprocessing
+import concurrent
+import threading
+import itertools
+warnings.filterwarnings("ignore")
+
 #from espnet2.bin.asr_inference_streaming import Speech2TextStreaming
 from speechcatcher.asr_inference_streaming import Speech2TextStreaming
 from espnet_model_zoo.downloader import ModelDownloader
@@ -26,12 +35,7 @@ from scipy.io import wavfile
 import ffmpeg
 import torch
 from tqdm import tqdm
-import math
-import json
-import multiprocessing
-import concurrent
-import threading
-import itertools
+
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from speechcatcher.simple_endpointing import segment_speech
 
