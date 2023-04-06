@@ -1,6 +1,6 @@
 # Speechcatcher
 
-This is a Python utility to interface [Speechcatcher EspNet2 models](https://huggingface.co/speechcatcher). You can transcribe media files and use the utility for live transcription. All models are trained end-to-end with punctuation - the ASR model is able to output full text directly, without the need for punctuation reconstruction. Speechcatcher runs fast on CPUs and does not need a GPU to transcribe.
+This is a Python utility to interface [Speechcatcher EspNet2 models](https://huggingface.co/speechcatcher). You can transcribe media files and use the utility for live transcription. All models are trained end-to-end with punctuation - the ASR model is able to output full text directly, without the need for punctuation reconstruction. Speechcatcher runs fast on CPUs and does not need a GPU to transcribe your audio.
 
 The current focus is on German ASR. But more models will follow - stay tuned!
 
