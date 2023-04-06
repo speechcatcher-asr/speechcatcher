@@ -92,7 +92,7 @@ def delete_multiple_lines(n=1):
     sys.stdout.write('\n\r')
 
 def progress_bar_output(q, max_i):
-    pbar = tqdm(total=max_i)
+    pbar = tqdm(total=max_i, desc='Transcribing')
     progress_i = 0
     while progress_i < max_i:
         q.get(block=True)
