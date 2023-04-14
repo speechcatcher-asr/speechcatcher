@@ -4,7 +4,7 @@ This is a Python utility to interface [Speechcatcher EspNet2 models](https://hug
 
 The current focus is on German ASR. But more models will follow - stay tuned!
 
-![Speechcatcher live recognition example](https://github.com/speechcatcher-asr/speechcatcher/raw/main/speechcatcher_de_live.gif)
+![Speechcatcher screenshot](https://github.com/speechcatcher-asr/speechcatcher-webgui/raw/main/screenshot1.png)
 
 ## Installation instructions:
 
