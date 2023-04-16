@@ -16,8 +16,17 @@ import os
 import sys
 import argparse
 import hashlib
+import warnings
+import math
+import json
+import multiprocessing
+import concurrent
+import threading
+import itertools
+warnings.filterwarnings("ignore")
+
 #from espnet2.bin.asr_inference_streaming import Speech2TextStreaming
-from asr_inference_streaming import Speech2TextStreaming
+from speechcatcher.asr_inference_streaming import Speech2TextStreaming
 from espnet_model_zoo.downloader import ModelDownloader
 import numpy as np
 import wave
@@ -26,14 +35,9 @@ from scipy.io import wavfile
 import ffmpeg
 import torch
 from tqdm import tqdm
-import math
-import json
-import multiprocessing
-import concurrent
-import threading
-import itertools
+
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
-from simple_endpointing import segment_speech
+from speechcatcher.simple_endpointing import segment_speech
 
 pbar_queue = None
 speech2text_global = None
@@ -92,7 +96,7 @@ def delete_multiple_lines(n=1):
     sys.stdout.write('\n\r')
 
 def progress_bar_output(q, max_i):
-    pbar = tqdm(total=max_i)
+    pbar = tqdm(total=max_i, desc='Transcribing')
     progress_i = 0
     while progress_i < max_i:
         q.get(block=True)
@@ -137,7 +141,7 @@ def is_completed(utterance):
 # progress mode: output transcription progress
 def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4):
     ensure_dir('.tmp/')
-    wavfile_path = '.tmp/' + hashlib.sha1(args.inputfile.encode("utf-8")).hexdigest() + '.wav'
+    wavfile_path = '.tmp/' + hashlib.sha1(media_path.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
 
     with wave.open(wavfile_path, 'rb') as wavfile_in:
@@ -349,8 +353,30 @@ def list_microphones():
 
     for i in range(0, num_devices):
         if (p.get_device_info_by_host_api_device_index(0, i).get('maxInputChannels')) > 0:
-            print("Input Device id ", i, " - ", p.get_device_info_by_host_api_device_index(0, i).get('name'))
+            print('Input Device id ', i, ' - ', p.get_device_info_by_host_api_device_index(0, i).get('name'))
 
+# This gives the user a helpful error message and advices the user on possible solutions when we encounter an "input overflow".
+def stream_read_with_exception(stream, chunksize, prev_lines, exception_on_overflow=True):
+    try:
+        data = stream.read(chunksize, exception_on_overflow=exception_on_overflow)
+    except OSError as e:
+        if 'Input overflowed' in str(e):
+            print('\n')
+            print('Input overflowed while trying to fetch new data from your microphone.')
+            print('This happens when the online recognition was not fast enough to decode speech in realtime.')
+            print('---')
+            print('Solution 1: You can silently discard this error by running speechcatcher live transcription with the --no-exception-on-overflow option.')
+            print('This may degrade recognition quality in unexpected ways, as some speech data will potentially be discarded to catch up with the newest microphone data.')
+            print('or')
+            print('Solution 2: Try to reduce the beamsize, for example with: speechcatcher -l -b 1. A smaller beamsize means faster decoding with slightly less accuracy.')
+            print('and/or')
+            print('Solution 3: Try to use a smaller and faster model.')
+            print(prev_lines*'\n')
+        else:
+            # handle other types of OS errors
+            print("An OS error occurred:", e)
+        sys.exit(-1)
+    return data
 
 # Stream audio data from a microphone to an espnet model
 # Chunksize should be at least 6400 for a lookahead of 16 frames
@@ -370,11 +396,11 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
     prev_lines = 0
 
     with ThreadPoolExecutor(max_workers=1) as executor:
-        data_future = executor.submit(stream.read, chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
+        data_future = executor.submit(stream_read_with_exception, stream, chunksize, prev_lines, exception_on_overflow=exception_on_pyaudio_overflow)
         for i in range(0, int(samplerate / chunksize * record_max_seconds) + 1):
 
             data = data_future.result(timeout=2)
-            data_future = executor.submit(stream.read, chunksize, exception_on_overflow=exception_on_pyaudio_overflow)
+            data_future = executor.submit(stream_read_with_exception, stream, chunksize, prev_lines, exception_on_overflow=exception_on_pyaudio_overflow)
 
             data = np.frombuffer(data, dtype='int16')
             if save_debug_wav:
@@ -427,8 +453,7 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
     print("\nMaximum recording time reached, exiting.")
 
 
-if __name__ == '__main__':
-
+def main():
     parser = argparse.ArgumentParser(
         description='Speechcatcher utility to decode speech with speechcatcher espnet models.')
     parser.add_argument('-l', '--live-transcription', dest='live', help='Use microphone for live transcription',
@@ -447,6 +472,8 @@ if __name__ == '__main__':
                         action='store_true')
     parser.add_argument('--no-progress', dest='no_progress', help='Show no progress bar when transcribing a media file',
                         action='store_true')
+    parser.add_argument('--no-exception-on-overflow', dest='no_exception_on_overflow',
+                        help='Do not abort live recognition when encountering an input overflow.', action='store_true')
     parser.add_argument('--save-debug-wav', dest='save_debug_wav',
                         help='Save recording to debug.wav, only applicable to live decoding', action='store_true')
     parser.add_argument('--num-threads', dest='num_threads', default=1,
@@ -456,7 +483,6 @@ if __name__ == '__main__':
                              ' (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() '
                              'divided by two.',
                         type=int)
-
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
     args = parser.parse_args()
@@ -491,8 +517,12 @@ if __name__ == '__main__':
 
     if args.live:
         recognize_microphone(speech2text, tag, record_max_seconds=args.max_record_time,
-                             save_debug_wav=args.save_debug_wav)
+                             save_debug_wav=args.save_debug_wav,
+                             exception_on_pyaudio_overflow=not args.no_exception_on_overflow)
     elif args.inputfile != '':
         recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes)
     else:
         parser.print_help()
+
+if __name__ == '__main__':
+    main()

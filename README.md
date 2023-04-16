@@ -1,8 +1,8 @@
 # Speechcatcher
 
-This is a Python utility to interface [Speechcatcher EspNet2 models](https://huggingface.co/speechcatcher). You can transcribe media files and use the utility for live transcription. All models are trained end-to-end with punctuation - the ASR model is able to output full text directly, without the need for punctuation reconstruction.
+This is a Python utility to interface [Speechcatcher EspNet2 models](https://huggingface.co/speechcatcher). You can transcribe media files and use the utility for live transcription. All models are trained end-to-end with punctuation - the ASR model is able to output full text directly, without the need for punctuation reconstruction. Speechcatcher runs fast on CPUs and does not need a GPU to transcribe your audio.
 
-Our first model is for German, trained on 13k hours of speech. More models will follow - stay tuned!
+The current focus is on German ASR. But more models will follow - stay tuned!
 
 ![Speechcatcher live recognition example](https://github.com/speechcatcher-asr/speechcatcher/raw/main/speechcatcher_de_live.gif)
 
@@ -16,7 +16,13 @@ on Linux:
     
     sudo apt-get install portaudio19-dev python3.10-dev ffmpeg
 
-Create a virtual environment:
+For a system-wide and global installation, simply do:
+
+    pip3 install git+https://github.com/speechcatcher-asr/speechcatcher
+
+## Virtual environment
+
+If you prefer an installation in a virtual environment, create one first:
 
     virtualenv -p python3.10 speechcatcher_env
 
@@ -28,29 +34,31 @@ Activate it:
 
     source speechcatcher_env/bin/activate
 
-Then install the requirements:
+Then install speechcatcher:
 
-    pip3 install -r requirements.txt
-   
-Done! You can then run speechcatcher with:
+    pip3 install git+https://github.com/speechcatcher-asr/speechcatcher
 
-    python3 speechcatcher.py media_file.mp4
+## Run speechcatcher from the command line
+
+After you have succesfully installed speechcatcher, you can decode any media file with:
+
+    speechcatcher media_file.mp4
 
 or to transcribe data live from your microphone:
 
-    python3 speechcatcher.py -l
+    speechcatcher -l
 
 All required model files are downloaded automatically and placed into a ".cache" directory.
 
-To use speechcatcher in your Python script:
+## Use speechcatcher in your Python code
+
+To use speechcatcher in your Python script import the speechcatcher package and use the recognize function:
 
     import speechcatcher
     short_tag = 'de_streaming_transformer_m'
     speech2text = speechcatcher.load_model(speechcatcher.tags[short_tag])
     
     text = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
-
-Currently, you would need to put your script into the same folder as speechcatcher.py, but this might be fixed in an upcoming release when speechcatcher is a proper Python module.
 
 ## Available models
 
@@ -64,7 +72,7 @@ Currently, you would need to put your script into the same folder as speechcatch
 
 ## Speechcatcher CLI parameters
 
-    usage: speechcatcher.py [-h] [-l] [-t MAX_RECORD_TIME] [-m MODEL] [-d DEVICE] [--lang LANGUAGE] [-b BEAMSIZE] [--quiet] [--no-progress] [--save-debug-wav] [--num-threads NUM_THREADS] [-n NUM_PROCESSES] [inputfile]
+    usage: speechcatcher [-h] [-l] [-t MAX_RECORD_TIME] [-m MODEL] [-d DEVICE] [--lang LANGUAGE] [-b BEAMSIZE] [--quiet] [--no-progress] [--save-debug-wav] [--num-threads NUM_THREADS] [-n NUM_PROCESSES] [inputfile]
 
     Speechcatcher utility to decode speech with speechcatcher espnet models.
 
@@ -98,6 +106,8 @@ Currently, you would need to put your script into the same folder as speechcatch
 Speechcatcher models are trained by using Whisper large as a teacher model:
 
 ![Speechcatcher Teacher/student training](https://github.com/speechcatcher-asr/speechcatcher/raw/main/speechcatcher_training.svg)
+
+See [speechcatcher-data](https://github.com/speechcatcher-asr/speechcatcher-data) for code and more info on replicating the training process.
 
 ## Citation
 
