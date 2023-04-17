@@ -16,6 +16,15 @@ import os
 import sys
 import argparse
 import hashlib
+import warnings
+import math
+import json
+import multiprocessing
+import concurrent
+import threading
+import itertools
+warnings.filterwarnings("ignore")
+
 #from espnet2.bin.asr_inference_streaming import Speech2TextStreaming
 from speechcatcher.asr_inference_streaming import Speech2TextStreaming
 from espnet_model_zoo.downloader import ModelDownloader
@@ -26,12 +35,7 @@ from scipy.io import wavfile
 import ffmpeg
 import torch
 from tqdm import tqdm
-import math
-import json
-import multiprocessing
-import concurrent
-import threading
-import itertools
+
 from concurrent.futures import ThreadPoolExecutor, ProcessPoolExecutor
 from speechcatcher.simple_endpointing import segment_speech
 
@@ -93,7 +97,7 @@ def delete_multiple_lines(n=1):
     sys.stdout.write('\n\r')
 
 def progress_bar_output(q, max_i):
-    pbar = tqdm(total=max_i)
+    pbar = tqdm(total=max_i, desc='Transcribing')
     progress_i = 0
     while progress_i < max_i:
         q.get(block=True)
@@ -138,7 +142,7 @@ def is_completed(utterance):
 # progress mode: output transcription progress
 def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4):
     ensure_dir('.tmp/')
-    wavfile_path = '.tmp/' + hashlib.sha1(args.inputfile.encode("utf-8")).hexdigest() + '.wav'
+    wavfile_path = '.tmp/' + hashlib.sha1(media_path.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
 
     with wave.open(wavfile_path, 'rb') as wavfile_in:

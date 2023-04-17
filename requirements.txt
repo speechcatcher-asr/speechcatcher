@@ -9,3 +9,4 @@ pyaudio
 python_speech_features
 scipy
 tqdm
+somajo

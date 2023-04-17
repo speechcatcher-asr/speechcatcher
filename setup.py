@@ -8,7 +8,7 @@ setup(
     version='0.1',
     author="Benjamin Milde",
     author_email="bmilde@users.noreply.github.com",
-    description="A short description of your project",
+    description="Speechcatcher is an open source toolbox for transcribing speech from media files (audio/video).",
     url="https://github.com/speechcatcher-asr/speechcatcher",
     packages=find_packages(),
     install_requires=requirements,

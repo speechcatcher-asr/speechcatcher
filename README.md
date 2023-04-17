@@ -1,6 +1,6 @@
 # Speechcatcher
 
-This is a Python utility to interface [Speechcatcher EspNet2 models](https://huggingface.co/speechcatcher). You can transcribe media files and use the utility for live transcription. All models are trained end-to-end with punctuation - the ASR model is able to output full text directly, without the need for punctuation reconstruction.
+This is a Python utility to interface [Speechcatcher EspNet2 models](https://huggingface.co/speechcatcher). You can transcribe media files and use the utility for live transcription. All models are trained end-to-end with punctuation - the ASR model is able to output full text directly, without the need for punctuation reconstruction. Speechcatcher runs fast on CPUs and does not need a GPU to transcribe your audio.
 
 The current focus is on German ASR. But more models will follow - stay tuned!
 
@@ -72,7 +72,7 @@ To use speechcatcher in your Python script import the speechcatcher package and 
 
 ## Speechcatcher CLI parameters
 
-    usage: speechcatcher.py [-h] [-l] [-t MAX_RECORD_TIME] [-m MODEL] [-d DEVICE] [--lang LANGUAGE] [-b BEAMSIZE] [--quiet] [--no-progress] [--save-debug-wav] [--num-threads NUM_THREADS] [-n NUM_PROCESSES] [inputfile]
+    usage: speechcatcher [-h] [-l] [-t MAX_RECORD_TIME] [-m MODEL] [-d DEVICE] [--lang LANGUAGE] [-b BEAMSIZE] [--quiet] [--no-progress] [--save-debug-wav] [--num-threads NUM_THREADS] [-n NUM_PROCESSES] [inputfile]
 
     Speechcatcher utility to decode speech with speechcatcher espnet models.
 
