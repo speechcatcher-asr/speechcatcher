@@ -14,7 +14,8 @@ setup(
     install_requires=requirements,
     entry_points={
         'console_scripts': [
-            'speechcatcher=speechcatcher.speechcatcher:main'
+            'speechcatcher=speechcatcher.speechcatcher:main',
+            'speechcatcher_compute_wer=speechcatcher.compute_wer:main'
         ]
     },
     classifiers=[
