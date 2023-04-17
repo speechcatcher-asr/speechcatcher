@@ -41,7 +41,8 @@ speech_global = None
 
 tags = {
     "de_streaming_transformer_m": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024",
-    "de_streaming_transformer_l": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024"}
+    "de_streaming_transformer_l": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024",
+    "de_streaming_transformer_xl": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_26k_train_size_xl_raw_de_bpe1024"}
 
 # See https://stackoverflow.com/questions/75193175/why-i-cant-use-multiprocessing-queue-with-processpoolexecutor
 def init_pool_processes(q, speech2text, speech):
@@ -456,8 +457,8 @@ def main():
                         action='store_true')
     parser.add_argument('-t', '--max-record-time', dest='max_record_time',
                         help='Maximum record time in seconds (live transcription).', type=float, default=120)
-    parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_l',
-                        help='Choose a model: de_streaming_transformer_m or de_streaming_transformer_l', type=str)
+    parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_xl',
+                        help='Choose a model: de_streaming_transformer_m, de_streaming_transformer_l or de_streaming_transformer_xl', type=str)
     parser.add_argument('-d', '--device', dest='device', default='cpu',
                         help="Computation device. Either 'cpu' or 'cuda'."
                              " Note: Mac M1 / mps support isn't available yet.")
