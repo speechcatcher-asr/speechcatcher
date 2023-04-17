@@ -52,7 +52,7 @@ def calculate_word_error_rate(kaldi_test_text_file, decoded_text_file, remove_pu
     print('WER:', wer(test_utterances_list, decoded_utterances_list))
     print('WIL:', wil(test_utterances_list, decoded_utterances_list))
 
-if __name__ == "__main__":
+def main():
     parser = argparse.ArgumentParser() 
     parser.add_argument('--remove_punctuation', dest='remove_punctuation',
                         help='Remove punctuation before calculating metrics', action='store_true')
@@ -65,3 +65,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     calculate_word_error_rate(args.testset_text, args.decoded_text, remove_punctuation=args.remove_punctuation, lower_case=args.lower_case)
+   
+if __name__ == "__main__":
+    main()
