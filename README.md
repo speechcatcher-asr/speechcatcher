@@ -55,7 +55,7 @@ All required model files are downloaded automatically and placed into a ".cache"
 To use speechcatcher in your Python script import the speechcatcher package and use the recognize function:
 
     import speechcatcher
-    short_tag = 'de_streaming_transformer_m'
+    short_tag = 'de_streaming_transformer_xl'
     speech2text = speechcatcher.load_model(speechcatcher.tags[short_tag])
     
     text = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
