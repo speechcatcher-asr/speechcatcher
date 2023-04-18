@@ -67,8 +67,8 @@ def ensure_dir(f):
 
 
 # Load the espnet model with the given tag
-def load_model(tag, device='cpu', beam_size=5, quiet=False):
-    espnet_model_downloader = ModelDownloader(".cache/espnet")
+def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet'):
+    espnet_model_downloader = ModelDownloader(cache_dir)
     return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag, quiet=quiet),
                                 device=device, token_type=None, bpemodel=None,
                                 maxlenratio=0.0, minlenratio=0.0, beam_size=beam_size, ctc_weight=0.3, lm_weight=0.0,
@@ -481,6 +481,8 @@ def main():
                         help='Save recording to debug.wav, only applicable to live decoding', action='store_true')
     parser.add_argument('--num-threads', dest='num_threads', default=1,
                         help='Set number of threads used for intraop parallelism on CPU in pytorch.', type=int)
+    parser.add_argument('--cache-dir', dest='cache_dir', default='~/.cache/espnet',
+                        help='Directory where model downloads are cached.', type=str)
     parser.add_argument('-n', '--num-processes', dest='num_processes', default=-1,
                         help='Set number of processes used for processing long audio files in parallel'
                              ' (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() '
@@ -514,7 +516,7 @@ def main():
     quiet = args.quiet or num_processes > 1
     progress = not args.no_progress
 
-    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress)
+    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress, cache_dir=args.cache_dir)
 
     args = parser.parse_args()
 
