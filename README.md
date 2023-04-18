@@ -68,13 +68,15 @@ To use speechcatcher in your Python script import the speechcatcher package and 
 
 ## Available models
 
-| Acoustic model | Training data (hours) | Tuda test WER (without LM) | CER |
+| Acoustic model | Training data (hours) | Tuda-raw test WER (without LM) | CER |
 | --- | --- | --- | --- |
 | de_streaming_transformer_m | 13k | 11.57 | 3.38 |
 | de_streaming_transformer_l | 13k | 9.65 | 2.76 |
 | de_streaming_transformer_xl | 26k | 8.5 | 2.44 | 
 | --- | --- | --- | --- |
 | whisper large | ? | coming | soon! | 
+
+Note: Tuda-de-raw results are based on raw tuda-de test utterances without the normalization step. It may not be directly comparable to regular tuda-de results.
 
 ## Speechcatcher CLI parameters
 
