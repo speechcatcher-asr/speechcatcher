@@ -179,6 +179,8 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
 
     print(f'Wrote transcription to {output_file_txt} and {output_file_json}.')
     os.remove(wavfile_path)
+    
+    return complete_json
 
 # Recgonize the speech in 'raw_speech_data' with sampling rate 'rate' using the model in 'speech2text'.
 # The rawspeech data should be a numpy array of dtype='int16'
