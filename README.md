@@ -72,7 +72,7 @@ To use speechcatcher in your Python script import the speechcatcher package and 
 | --- | --- | --- | --- |
 | de_streaming_transformer_m | 13k | 11.57 | 3.38 |
 | de_streaming_transformer_l | 13k | 9.65 | 2.76 |
-| de_streaming_transformer_xl | 26k | coming | soon! | 
+| de_streaming_transformer_xl | 26k | 8.5 | 2.44 | 
 | --- | --- | --- | --- |
 | whisper large | ? | coming | soon! | 
 
