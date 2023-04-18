@@ -76,7 +76,7 @@ To use speechcatcher in your Python script import the speechcatcher package and 
 | --- | --- | --- | --- |
 | whisper large | ? | coming | soon! | 
 
-Note: Tuda-de-raw results are based on raw tuda-de test utterances without the normalization step. It may not be directly comparable to regular tuda-de results.
+Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances without the normalization step. It may not be directly comparable to regular tuda-de results.
 
 ## Speechcatcher CLI parameters
 
