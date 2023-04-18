@@ -80,8 +80,6 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
 
 ## Speechcatcher CLI parameters
 
-    usage: speechcatcher [-h] [-l] [-t MAX_RECORD_TIME] [-m MODEL] [-d DEVICE] [--lang LANGUAGE] [-b BEAMSIZE] [--quiet] [--no-progress] [--save-debug-wav] [--num-threads NUM_THREADS] [-n NUM_PROCESSES] [inputfile]
-
     Speechcatcher utility to decode speech with speechcatcher espnet models.
 
     positional arguments:
@@ -94,7 +92,7 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
       -t MAX_RECORD_TIME, --max-record-time MAX_RECORD_TIME
                             Maximum record time in seconds (live transcription).
       -m MODEL, --model MODEL
-                            Choose a model: de_streaming_transformer_m or de_streaming_transformer_l
+                            Choose a model: de_streaming_transformer_m, de_streaming_transformer_l or de_streaming_transformer_xl
       -d DEVICE, --device DEVICE
                             Computation device. Either 'cpu' or 'cuda'. Note: Mac M1 / mps support isn't available yet.
       --lang LANGUAGE       Explicitly set language, default is empty = deduct language from model tag
@@ -102,12 +100,13 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
                             Beam size for the decoder
       --quiet               No partial transcription output when transcribing a media file
       --no-progress         Show no progress bar when transcribing a media file
+      --no-exception-on-overflow
+                            Do not abort live recognition when encountering an input overflow.
       --save-debug-wav      Save recording to debug.wav, only applicable to live decoding
       --num-threads NUM_THREADS
                             Set number of threads used for intraop parallelism on CPU in pytorch.
       -n NUM_PROCESSES, --num-processes NUM_PROCESSES
-                            Set number of processes used for processing long audio files in parallel (the input file needs to be long enough).
-                            If set to -1, use multiprocessing.cpu_count() divided by two.
+                            Set number of processes used for processing long audio files in parallel (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() divided by two.
 
 ## Speechcatcher training
 
