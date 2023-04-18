@@ -54,11 +54,17 @@ All required model files are downloaded automatically and placed into a ".cache"
 
 To use speechcatcher in your Python script import the speechcatcher package and use the recognize function:
 
-    import speechcatcher
+    from speechcatcher import speechcatcher
     short_tag = 'de_streaming_transformer_xl'
     speech2text = speechcatcher.load_model(speechcatcher.tags[short_tag])
     
-    text = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
+    # speech is a numpy array of dtype='np.int16' (audio with 16kHz sampling rate)
+    complete_text, paragraphs, paragraphs_tokens, paragraph_hyps, segments_start_end_in_seconds = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
+
+    # or use the recognize_file function, where media_path can be in any fileformat that ffmpeg supports
+    # result object is: {"complete_text":complete_text, "segments_start_end_in_seconds":segments_start_end_in_seconds,
+    #                    "segments":paragraphs, "segment_tokens":paragraphs_tokens}
+    result = recognize_file(speech2text, media_path, output_file='', quiet=True, progress=False, num_processes=4)
 
 ## Available models
 
