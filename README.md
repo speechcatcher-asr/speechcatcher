@@ -70,11 +70,11 @@ To use speechcatcher in your Python script import the speechcatcher package and 
 
 | Acoustic model | Training data (hours) | Tuda-raw test WER (without LM) | CER |
 | --- | --- | --- | --- |
-| de_streaming_transformer_m | 13k | 11.57 | 3.38 |
-| de_streaming_transformer_l | 13k | 9.65 | 2.76 |
-| de_streaming_transformer_xl | 26k | 8.5 | 2.44 | 
+| [de_streaming_transformer_m](https://huggingface.co/speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024) | 13k | 11.57 | 3.38 |
+| [de_streaming_transformer_l](https://huggingface.co/speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024) | 13k | 9.65 | 2.76 |
+| [de_streaming_transformer_xl](https://huggingface.co/speechcatcher/speechcatcher_german_espnet_streaming_transformer_26k_train_size_xl_raw_de_bpe1024) | 26k | 8.5 | 2.44 | 
 | --- | --- | --- | --- |
-| whisper large | ? | coming | soon! | 
+| [whisper large](https://huggingface.co/openai/whisper-large-v2) | ? | coming | soon! | 
 
 Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances without the normalization step. It may not be directly comparable to regular tuda-de results.
 
