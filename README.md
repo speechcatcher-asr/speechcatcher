@@ -69,7 +69,7 @@ To use speechcatcher in your Python script, you need to import the speechcatcher
         print(f"Sample Rate: {rate} Hz")
         print(f"Audio Shape: {audio_data.shape}")
     
-        # speech is a numpy array of dtype='np.int16' (audio with 16kHz sampling rate)
+        # speech is a numpy array of dtype='np.int16' (16bit audio with 16kHz sampling rate)
         complete_text, paragraphs, paragraphs_tokens, paragraph_hyps, segments_start_end_in_seconds = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
     
         print(complete_text)
