@@ -52,19 +52,27 @@ All required model files are downloaded automatically and placed into a ".cache"
 
 ## Use speechcatcher in your Python code
 
-To use speechcatcher in your Python script import the speechcatcher package and use the recognize function:
+To use speechcatcher in your Python script, you need to import the speechcatcher package and use the recognize function. Here is a complete example, that reads a 16kHz mono wav and outputs the recognized text:
 
     from speechcatcher import speechcatcher
-    short_tag = 'de_streaming_transformer_xl'
-    speech2text = speechcatcher.load_model(speechcatcher.tags[short_tag])
+    import numpy as np
+    from scipy.io import wavfile
     
-    # speech is a numpy array of dtype='np.int16' (audio with 16kHz sampling rate)
-    complete_text, paragraphs, paragraphs_tokens, paragraph_hyps, segments_start_end_in_seconds = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
-
-    # or use the recognize_file function, where media_path can be in any fileformat that ffmpeg supports
-    # result object is: {"complete_text":complete_text, "segments_start_end_in_seconds":segments_start_end_in_seconds,
-    #                    "segments":paragraphs, "segment_tokens":paragraphs_tokens}
-    result = recognize_file(speech2text, media_path, output_file='', quiet=True, progress=False, num_processes=4)
+    if __name__ == '__main__':
+        short_tag = 'de_streaming_transformer_xl'
+        speech2text = speechcatcher.load_model(speechcatcher.tags[short_tag])
+    
+        wav_file = 'output.wav'
+        rate, audio_data = wavfile.read(wav_file)
+        speech = audio_data.astype(np.int16)
+    
+        print(f"Sample Rate: {rate} Hz")
+        print(f"Audio Shape: {audio_data.shape}")
+    
+        # speech is a numpy array of dtype='np.int16' (audio with 16kHz sampling rate)
+        complete_text, paragraphs, paragraphs_tokens, paragraph_hyps, segments_start_end_in_seconds = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
+    
+        print(complete_text)
 
 ## Available models
 
