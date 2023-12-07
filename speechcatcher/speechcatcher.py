@@ -112,11 +112,11 @@ def status_output(q, max_i, status):
     output_every = 10
     while progress_i < max_i:
         q.get(block=True)
-        progress_i += 1
         percentage = (progress_i / max_i) * 100.0
         formatted_output_str = f"Transcribing... {percentage:.{precision}f}%"
         if progress_i % output_every == 0:
             status.publish_status(formatted_output_str)
+        progress_i += 1
 
 # Output current hypothesis on the fly. Note that .
 def progress_output(text, prev_lines=0):
