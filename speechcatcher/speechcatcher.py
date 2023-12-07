@@ -283,7 +283,7 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
         t.start()
 
     # Custom status object that you can use as a callback. Uses the function publish_status(msg: str) on the object.
-    if status and not progress:
+    if status:
         t = threading.Thread(target=status_output, args=(q, max_i, status))
         t.start()
 
