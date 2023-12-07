@@ -106,6 +106,18 @@ def progress_bar_output(q, max_i):
         progress_i += 1
         pbar.update(1)    
 
+def status_output(q, max_i, status):
+    progress_i = 0
+    precision = 2
+    output_every = 10
+    while progress_i < max_i:
+        q.get(block=True)
+        progress_i += 1
+        percentage = (progress_i / max_i) * 100.0
+        formatted_output_str = f"Transcribing... {percentage:.{precision}f}%"
+        if progress_i % output_every == 0:
+            status.publish_status(formatted_output_str)
+
 # Output current hypothesis on the fly. Note that .
 def progress_output(text, prev_lines=0):
     lines = ['']
@@ -221,7 +233,7 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
 # Recgonize the speech in 'raw_speech_data' with sampling rate 'rate' using the model in 'speech2text'.
 # The rawspeech data should be a numpy array of dtype='int16'
 
-def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_processes=1, progress=True, quiet=False):
+def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_processes=1, progress=True, quiet=False, status=None):
     # 32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
     speech = raw_speech_data.astype(np.float16) / 32767.0
 
@@ -269,6 +281,12 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
     if progress:
         t = threading.Thread(target=progress_bar_output, args=(q, max_i))
         t.start()
+
+    # Custom status object that you can use as a callback. Uses the function publish_status(msg: str) on the object.
+    if status and not progress:
+        t = threading.Thread(target=status_output, args=(q, max_i, status))
+        t.start()
+
     with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
                              initargs=(q, speech2text, speech)) as executor:
 
