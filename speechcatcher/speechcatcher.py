@@ -113,7 +113,7 @@ def status_output(q, max_i, status):
     while progress_i < max_i:
         q.get(block=True)
         percentage = (progress_i / max_i) * 100.0
-        formatted_output_str = f"Transcribing... {percentage:.{precision}f}%"
+        formatted_output_str = f"Decoding progress: {percentage:.{precision}f}%"
         if progress_i % output_every == 0:
             status.publish_status(formatted_output_str)
         progress_i += 1
