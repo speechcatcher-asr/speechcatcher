@@ -286,6 +286,7 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
     if status:
         t = threading.Thread(target=status_output, args=(q, max_i, status))
         t.start()
+        progress=True
 
     with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
                              initargs=(q, speech2text, speech)) as executor:
