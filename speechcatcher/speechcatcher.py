@@ -79,6 +79,17 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
                                 )
 
 
+# Convert input file to 16 kHz mono, use stdout to capture the output in-memory
+def convert_inputfile_inmemory(filename):
+    out, _ = (
+        ffmpeg.input(filename)
+            .output('pipe:', format='wav', acodec='pcm_s16le', ac=1, ar='16k')
+            .run(quiet=True, overwrite_output=True)
+    )
+
+    return out
+
+
 # Convert input file to 16 kHz mono
 def convert_inputfile(filename, outfile_wav):
     return (
