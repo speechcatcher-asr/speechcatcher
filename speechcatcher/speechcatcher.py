@@ -230,6 +230,13 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
     
     return complete_json
 
+# handle the serial execution of tasks (when num_processes is set to 1)
+def process_tasks_serially(tasks):
+    results = []
+    for task in tasks:
+        results.append(task())
+    return results
+
 # Recgonize the speech in 'raw_speech_data' with sampling rate 'rate' using the model in 'speech2text'.
 # The rawspeech data should be a numpy array of dtype='int16'
 
@@ -288,22 +295,30 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
         t.start()
         progress=True
 
-    with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
-                             initargs=(q, speech2text, speech)) as executor:
-
+    if num_processes == 1:
+        # If num_processes is 1, run tasks serially
+        init_pool_processes(q, speech2text, speech)
         start_end_positions = zip(segments_i[:-1], segments_i[1:])
-        for start, end in start_end_positions:
-            data_future = executor.submit(recognize_segment, speech_len, start, end, chunk_length,
-                                          progress, rate, quiet)
-            futures.append(data_future)
+        tasks = [lambda start=start, end=end: recognize_segment(speech_len, start, end, chunk_length,
+                                                           progress, rate, quiet) for start, end in start_end_positions]
+        paragraphs_raw = process_tasks_serially(tasks)
+    else: #parallel execution with concurrent.futures and ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
+                                 initargs=(q, speech2text, speech)) as executor:
 
-            seg_num += 1
+            start_end_positions = zip(segments_i[:-1], segments_i[1:])
+            for start, end in start_end_positions:
+                data_future = executor.submit(recognize_segment, speech_len, start, end, chunk_length,
+                                              progress, rate, quiet)
+                futures.append(data_future)
 
-        # wait until all segments have been recognized
-        concurrent.futures.wait(futures)
+                seg_num += 1
 
-        for r in futures:
-            paragraphs_raw.append(r.result())
+            # wait until all segments have been recognized
+            concurrent.futures.wait(futures)
+
+            for r in futures:
+                paragraphs_raw.append(r.result())
 
     paragraphs = [elem[0] for elem in paragraphs_raw] 
 
