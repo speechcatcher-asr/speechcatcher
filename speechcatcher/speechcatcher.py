@@ -625,6 +625,10 @@ def main():
     if args.num_processes != -1:
         num_processes = args.num_processes
 
+    # do not use multiprocessing on GPU
+    if args.device.lower() != 'cpu':
+        num_processes = 1 
+
     if args.model not in tags:
         print(f'Model {args.model} is not a valid model!')
         print('Options are:', ', '.join(tags.keys()))
