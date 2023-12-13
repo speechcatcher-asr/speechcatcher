@@ -24,7 +24,7 @@ For a system-wide and global installation, simply do:
 
 If you prefer an installation in a virtual environment, create one first:
 
-    virtualenv -p python3.10 speechcatcher_env
+    virtualenv -p python3.11 speechcatcher_env
 
 Note, if you get "-bash: virtualenv: command not found", install virtualenv through pip:  
 
