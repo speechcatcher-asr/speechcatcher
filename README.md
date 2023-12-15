@@ -6,6 +6,10 @@ The current focus is on German ASR. But more models will follow - stay tuned!
 
 ![Speechcatcher live recognition example](https://github.com/speechcatcher-asr/speechcatcher/raw/main/speechcatcher_de_live.gif)
 
+## News
+
+* 15.12.2023. New in version 0.3.1: Support for timestamps on the token level. Speechcatcher is now using [espnet_streaming_decoder](https://github.com/speechcatcher-asr/espnet_streaming_decoder) instead of [espnet](https://github.com/espnet/espnet), to make dependencies leaner and to enable token timestamps with streaming models. Speechcatcher does not require a full Espnet installation anymore. It also uses a forked version of [espnet_model_zoo](https://github.com/speechcatcher-asr/espnet_model_zoo), so that model downloads are only checked online if a local cache copy isn't available.
+
 ## Installation instructions:
 
 Install portaudio, on Mac:
