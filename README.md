@@ -67,7 +67,7 @@ To use speechcatcher in your Python script, you need to import the speechcatcher
         short_tag = 'de_streaming_transformer_xl'
         speech2text = speechcatcher.load_model(speechcatcher.tags[short_tag])
     
-        wav_file = 'output.wav'
+        wav_file = 'input.wav'
         rate, audio_data = wavfile.read(wav_file)
         speech = audio_data.astype(np.int16)
     
