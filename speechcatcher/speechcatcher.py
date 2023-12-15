@@ -25,8 +25,8 @@ import threading
 import itertools
 warnings.filterwarnings("ignore")
 
-#from espnet2.bin.asr_inference_streaming import Speech2TextStreaming
-from speechcatcher.asr_inference_streaming import Speech2TextStreaming
+from espnet_streaming_decoder.asr_inference_streaming import Speech2TextStreaming
+
 from espnet_model_zoo.downloader import ModelDownloader
 import numpy as np
 import wave
@@ -42,6 +42,8 @@ from speechcatcher.simple_endpointing import segment_speech
 pbar_queue = None
 speech2text_global = None
 speech_global = None
+
+espnet_input_factor = 24.0
 
 tags = {
     "de_streaming_transformer_m": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024",
@@ -77,6 +79,17 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
                                 )
 
 
+# Convert input file to 16 kHz mono, use stdout to capture the output in-memory
+def convert_inputfile_inmemory(filename):
+    out, _ = (
+        ffmpeg.input(filename)
+            .output('pipe:', format='wav', acodec='pcm_s16le', ac=1, ar='16k')
+            .run(quiet=True, overwrite_output=True)
+    )
+
+    return out
+
+
 # Convert input file to 16 kHz mono
 def convert_inputfile(filename, outfile_wav):
     return (
@@ -103,6 +116,18 @@ def progress_bar_output(q, max_i):
         q.get(block=True)
         progress_i += 1
         pbar.update(1)    
+
+def status_output(q, max_i, status):
+    progress_i = 0
+    precision = 2
+    output_every = 10
+    while progress_i < max_i:
+        q.get(block=True)
+        progress_i += 1
+        percentage = (progress_i / max_i) * 100.0
+        formatted_output_str = f"Decoding progress: {percentage:.{precision}f}%"
+        if progress_i % output_every == 0:
+            status.publish_status(formatted_output_str)
 
 # Output current hypothesis on the fly. Note that .
 def progress_output(text, prev_lines=0):
@@ -136,6 +161,41 @@ def upperCaseFirstLetter(utterance_text):
 def is_completed(utterance):
     return utterance.endswith('.') or utterance.endswith('?') or utterance.endswith('!')
 
+# linearly interpolate between repeating positions, so that the last number of a repeating group
+# is the largest of a block and all preceding repeating numbers are replaced with interpolated numbers
+# should there be a repeating group of numbers right at the start, interpolate as if the preceding number is zero.
+
+def linear_interpolate_pos(input_list_in):
+    output_list = []
+    i = 0
+
+    # interpolate as if the preceding number is zero for the first group
+    input_list = [0] + input_list_in
+
+    while i < len(input_list):
+        current_number = float(input_list[i])
+
+        # find repeating group (can also be a single number)
+        group_start = i
+        while i < len(input_list) and input_list[i] == current_number:
+            i += 1
+        group_end = i - 1
+
+        preceeding_num = 0.0 if group_start == 0 else input_list[group_start - 1]
+
+        # interpolate between the preceding number and the last number in the group
+        interpolation_values = [
+            preceeding_num
+            + (group_end - j) / (group_end - group_start + 1)
+            * (current_number - input_list[group_start - 1])
+            for j in range(group_start, group_end)
+        ]
+
+        output_list.extend(interpolation_values)
+        output_list.append(float(input_list[group_end]))
+
+    # remove "boundary" zero from the output list
+    return output_list[1:]
 
 # Using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
@@ -154,7 +214,7 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
         raw_speech_data = np.frombuffer(buf, dtype='int16')
 
     chunk_length = 8192
-    complete_text, paragraphs, paragraphs_tokens, paragraph_hyps, segments_start_end_in_seconds = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet)
+    complete_text, auxiliary_info = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet)
 
     # Automatically generate output .txt name from media_path if it isnt set
     # media_path can also be an URL, in that case it needs special handling
@@ -173,8 +233,7 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
         output_file_txt_out.write(complete_text)
 
     with open(output_file_json, 'w') as output_file_json_out:
-        complete_json = {"complete_text":complete_text, "segments_start_end_in_seconds":segments_start_end_in_seconds,
-                        "segments":paragraphs, "segment_tokens":paragraphs_tokens}
+        complete_json = {"complete_text":complete_text, "paragraphs":auxiliary_info}
         output_file_json_out.write(json.dumps(complete_json, indent=4))
 
     print(f'Wrote transcription to {output_file_txt} and {output_file_json}.')
@@ -182,10 +241,17 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
     
     return complete_json
 
+# handle the serial execution of tasks (when num_processes is set to 1)
+def process_tasks_serially(tasks):
+    results = []
+    for task in tasks:
+        results.append(task())
+    return results
+
 # Recgonize the speech in 'raw_speech_data' with sampling rate 'rate' using the model in 'speech2text'.
 # The rawspeech data should be a numpy array of dtype='int16'
 
-def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_processes=1, progress=True, quiet=False):
+def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_processes=1, progress=True, quiet=False, status=None):
     # 32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
     speech = raw_speech_data.astype(np.float16) / 32767.0
 
@@ -233,22 +299,37 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
     if progress:
         t = threading.Thread(target=progress_bar_output, args=(q, max_i))
         t.start()
-    with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
-                             initargs=(q, speech2text, speech)) as executor:
 
+    # Custom status object that you can use as a callback. Uses the function publish_status(msg: str) on the object.
+    if status:
+        t = threading.Thread(target=status_output, args=(q, max_i, status))
+        t.start()
+        progress=True
+
+    if num_processes == 1:
+        # If num_processes is 1, run tasks serially
+        init_pool_processes(q, speech2text, speech)
         start_end_positions = zip(segments_i[:-1], segments_i[1:])
-        for start, end in start_end_positions:
-            data_future = executor.submit(recognize_segment, speech_len, start, end, chunk_length,
-                                          progress, rate, quiet)
-            futures.append(data_future)
+        tasks = [lambda start=start, end=end: recognize_segment(speech_len, start, end, chunk_length,
+                                                           progress, rate, quiet) for start, end in start_end_positions]
+        paragraphs_raw = process_tasks_serially(tasks)
+    else: #parallel execution with concurrent.futures and ProcessPoolExecutor
+        with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
+                                 initargs=(q, speech2text, speech)) as executor:
 
-            seg_num += 1
+            start_end_positions = zip(segments_i[:-1], segments_i[1:])
+            for start, end in start_end_positions:
+                data_future = executor.submit(recognize_segment, speech_len, start, end, chunk_length,
+                                              progress, rate, quiet)
+                futures.append(data_future)
 
-        # wait until all segments have been recognized
-        concurrent.futures.wait(futures)
+                seg_num += 1
 
-        for r in futures:
-            paragraphs_raw.append(r.result())
+            # wait until all segments have been recognized
+            concurrent.futures.wait(futures)
+
+            for r in futures:
+                paragraphs_raw.append(r.result())
 
     paragraphs = [elem[0] for elem in paragraphs_raw] 
 
@@ -258,30 +339,70 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
     merged_paragraphs_tokens = list(itertools.chain(*[elem[1] for elem in paragraphs_raw]))
     merged_paragraphs_pos = list(itertools.chain(*[elem[2] for elem in paragraphs_raw]))
 
+    merged_paragraphs_pos_in_secs = []
+    for pos_list, (start, end) in zip(paragraphs_pos, segments_in_seconds_start_end):
+        pos_list_in_secs = [start + pos_list_elem/espnet_input_factor for pos_list_elem in pos_list]
+        merged_paragraphs_pos_in_secs += pos_list_in_secs
+
     paragraph_hyps = [elem[3] for elem in paragraphs_raw]
 
-    assert(len(merged_paragraphs_tokens) == len(merged_paragraphs_pos))
+    assert(len(merged_paragraphs_tokens) == len(merged_paragraphs_pos_in_secs))
 
     merged_paragraphs_json = zip(merged_paragraphs_tokens, merged_paragraphs_pos)
-    merged_paragraphs = [paragraphs[0]] if len(paragraphs) > 0 else []
 
-    # Post-processing for paragraphs
-    # Merge paragraphs that shouldn't be separate segments
-    # Make sure the first letter of a paragraph is upper case
-    for prev_paragraph, paragraph in zip(paragraphs[:-1], paragraphs[1:]):
+    #populate merged_paragraphs and auxiliary_info with the first segment, if there is one
+    merged_paragraphs = [paragraphs[0]] if len(paragraphs) > 0 else []
+    auxiliary_info = [{'start':segments_in_seconds_start_end[0][0], 'end':segments_in_seconds_start_end[0][1],
+                        'text': paragraphs[0], 'tokens': paragraphs_tokens[0],
+                        'token_timestamps': [segments_in_seconds_start_end[0][0] + float(timestamp_elem)/espnet_input_factor
+                                             for timestamp_elem in paragraphs_pos[0]]}] if len(paragraphs) > 0 else []
+
+    # post-processing for paragraphs and auxillary information (tokens, timestamps etc.)
+    # merge paragraphs that shouldn't be separate segments
+    # make sure the first letter of a paragraph is upper case
+    for prev_paragraph, paragraph, tokens, timestamps, segment_start_end in zip(
+        paragraphs[:-1],
+        paragraphs[1:],
+        paragraphs_tokens[1:],
+        paragraphs_pos[1:],
+        segments_in_seconds_start_end[1:]
+    ):
+        # convert espnet timestamps (in features) to seconds and make them global (add the segment start)
+        timestamps = [segment_start_end[0] + float(timestamp_elem)/espnet_input_factor for timestamp_elem in timestamps]
+
         # with endpointing, it's likely that there is a pause between the segments
         # here we actually check if the model thinks that this ending is also a sentence ending
         # only add a paragraph to the text output if model and end pointer agree on the segment boundary
         if is_completed(prev_paragraph):
-            # Make sure the paragraph starts with a capitalized letter
+            # make sure the paragraph starts with a capitalized letter
             paragraph = upperCaseFirstLetter(paragraph)
-            merged_paragraphs += [paragraph]
+            merged_paragraphs.append(paragraph)
+
+            assert(len(tokens)==len(timestamps))
+
+            aux_info = {
+                'start': segment_start_end[0],
+                'end': segment_start_end[1],
+                'text': paragraph,
+                'tokens': tokens,
+                'token_timestamps': timestamps
+            }
+            auxiliary_info.append(aux_info)
         else:
             # might be in the middle of a sentence - append to the last (open) paragraph
             merged_paragraphs[-1] += ' ' + paragraph
+
+            assert(len(tokens)==len(timestamps))
+
+            # update the auxiliary information for the last paragraph
+            auxiliary_info[-1]['end'] = segment_start_end[1]
+            auxiliary_info[-1]['text'] += ' ' + paragraph
+            auxiliary_info[-1]['tokens'].extend(tokens)
+            auxiliary_info[-1]['token_timestamps'].extend(timestamps)  
+
     complete_text = '\n\n'.join(merged_paragraphs)
     print('\n')
-    return complete_text, paragraphs, paragraphs_tokens, paragraph_hyps, segments_in_seconds_start_end
+    return complete_text, auxiliary_info
 
 
 # Transcribe a segment of speech, defined by start and end points
@@ -346,6 +467,7 @@ def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rat
             sys.stdout.write('\n')
 
     return [utterance_text, utterance_token, utterance_pos, utterance_hyp], prev_lines
+    #return [utterance_text, utterance_token, linear_interpolate_pos(utterance_pos), utterance_hyp], prev_lines
 
 
 # List all available microphones on this system
@@ -502,6 +624,10 @@ def main():
 
     if args.num_processes != -1:
         num_processes = args.num_processes
+
+    # do not use multiprocessing on GPU
+    if args.device.lower() != 'cpu':
+        num_processes = 1 
 
     if args.model not in tags:
         print(f'Model {args.model} is not a valid model!')

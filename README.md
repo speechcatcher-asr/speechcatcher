@@ -24,7 +24,7 @@ For a system-wide and global installation, simply do:
 
 If you prefer an installation in a virtual environment, create one first:
 
-    virtualenv -p python3.10 speechcatcher_env
+    virtualenv -p python3.11 speechcatcher_env
 
 Note, if you get "-bash: virtualenv: command not found", install virtualenv through pip:  
 
@@ -52,12 +52,13 @@ All required model files are downloaded automatically and placed into a ".cache"
 
 ## Use speechcatcher in your Python code
 
-To use speechcatcher in your Python script, you need to import the speechcatcher package and use the recognize function. Here is a complete example, that reads a 16kHz mono wav and outputs the recognized text:
+To use speechcatcher in your Python script, you need to import the speechcatcher package and use the recognize function in a '__main__' guarded block. Here is a complete example, that reads a 16kHz mono wav and outputs the recognized text:
 
     from speechcatcher import speechcatcher
     import numpy as np
     from scipy.io import wavfile
     
+    # you need to run speechcatcher in a '__main__' guarded block:
     if __name__ == '__main__':
         short_tag = 'de_streaming_transformer_xl'
         speech2text = speechcatcher.load_model(speechcatcher.tags[short_tag])
@@ -70,9 +71,20 @@ To use speechcatcher in your Python script, you need to import the speechcatcher
         print(f"Audio Shape: {audio_data.shape}")
     
         # speech is a numpy array of dtype='np.int16' (16bit audio with 16kHz sampling rate)
-        complete_text, paragraphs, paragraphs_tokens, paragraph_hyps, segments_start_end_in_seconds = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
+        complete_text, paragraphs = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
     
+        # complete_text is a string with the complete decoded text
         print(complete_text)
+        
+        # -> Faust. Eine Tragödie von Johann Wolfgang von Goethe. Zueignung. Ihr naht euch wieder, schwankende Gestalten...
+
+        # paragraphs contains a list of paragraphs with additional information, such as start and end position,
+        # token and token_timestamps (upper bound, in seconds)
+        print(paragraphs)
+        
+        # -> [{'start': 0, 'end': 44.51, 'text': 'Faust. Eine Tragödie von Johann Wolfgang von Goethe. Zueignung. Ihr naht euch wieder, schwankende Gestalten...', 'tokens': ['▁F', 'aus', 't', '.', '▁Ein', 'e', '▁Tra', 'g', 'ö', 'di', 'e', '▁von', '▁Jo', 'ha', 'n', 'n', '▁Wo', 'l', 'f', 'gang', '▁von', '▁G', 'o', 'et', 'he', '.', '▁Zu', 'e', 'ig', 'n', 'ung', '.', '▁I', 'hr', '▁', 'na', 'ht', '▁euch', '▁wieder', ',', '▁sch', 'wa', 'n', 'ken', 'de', '▁Ge', 'st', 'al', 'ten', '.', ...
+'token_timestamps': [1.666, 2.333, 2.333, 3.0, 3.0, 3.0, 3.0, 3.0, 3.666, 4.333, 4.333, 4.333, 5.0, 5.0, 5.0, 5.0, 5.0, 5.666, 5.666, 5.666, 6.333, 6.333, 6.333, 7.0, 7.666, 7.666, 7.666, 7.666, 8.333, 9.666, 9.666, 9.666, 9.666, 9.666, 9.666, 10.333, 10.333, 11.0, 11.666, 11.666, 11.666, 11.666, 11.666, 12.333, 12.333, 12.333, 13.0, 13.666, 14.333, 14.333, 14.333, 14.333, 14.333, 14.333, 14.333, ... ]}, ... ]
+
 
 ## Available models
 
