@@ -82,8 +82,8 @@ To use speechcatcher in your Python script, you need to import the speechcatcher
         # token and token_timestamps (upper bound, in seconds)
         print(paragraphs)
         
-        # -> [{'start': 0, 'end': 44.51, 'text': 'Faust. Eine Tragödie von Johann Wolfgang von Goethe. Zueignung. Ihr naht euch wieder, schwankende Gestalten...', 'tokens': ['▁F', 'aus', 't', '.', '▁Ein', 'e', '▁Tra', 'g', 'ö', 'di', 'e', '▁von', '▁Jo', 'ha', 'n', 'n', '▁Wo', 'l', 'f', 'gang', '▁von', '▁G', 'o', 'et', 'he', '.', '▁Zu', 'e', 'ig', 'n', 'ung', '.', '▁I', 'hr', '▁', 'na', 'ht', '▁euch', '▁wieder', ',', '▁sch', 'wa', 'n', 'ken', 'de', '▁Ge', 'st', 'al', 'ten', '.', ...
-'token_timestamps': [1.666, 2.333, 2.333, 3.0, 3.0, 3.0, 3.0, 3.0, 3.666, 4.333, 4.333, 4.333, 5.0, 5.0, 5.0, 5.0, 5.0, 5.666, 5.666, 5.666, 6.333, 6.333, 6.333, 7.0, 7.666, 7.666, 7.666, 7.666, 8.333, 9.666, 9.666, 9.666, 9.666, 9.666, 9.666, 10.333, 10.333, 11.0, 11.666, 11.666, 11.666, 11.666, 11.666, 12.333, 12.333, 12.333, 13.0, 13.666, 14.333, 14.333, 14.333, 14.333, 14.333, 14.333, 14.333, ... ]}, ... ]
+        # -> [{'start': 0, 'end': 44.51, 'text': 'Faust. Eine Tragödie von Johann Wolfgang von Goethe. Zueignung. Ihr naht euch wieder, schwankende Gestalten...', 'tokens': ['▁F', 'aus', 't', '.', '▁Ein', 'e', '▁Tra', 'g', 'ö', 'di', 'e', '▁von', '▁Jo', 'ha', 'n', 'n', '▁Wo', 'l', 'f', 'gang', '▁von', '▁G', 'o', 'et', 'he', '.', '▁Zu', 'e', 'ig', 'n', 'ung', '.', '▁I', 'hr', '▁', 'na', 'ht', '▁euch', '▁wieder', ',', '▁sch', 'wa', 'n', 'ken', 'de', '▁Ge', 'st', 'al', 'ten', '.', ... ],
+        # 'token_timestamps': [1.666, 2.333, 2.333, 3.0, 3.0, 3.0, 3.0, 3.0, 3.666, 4.333, 4.333, 4.333, 5.0, 5.0, 5.0, 5.0, 5.0, 5.666, 5.666, 5.666, 6.333, 6.333, 6.333, 7.0, 7.666, 7.666, 7.666, 7.666, 8.333, 9.666, 9.666, 9.666, 9.666, 9.666, 9.666, 10.333, 10.333, 11.0, 11.666, 11.666, 11.666, 11.666, 11.666, 12.333, 12.333, 12.333, 13.0, 13.666, 14.333, 14.333, 14.333, 14.333, 14.333, 14.333, 14.333, ... ]}, ... ]
 
 
 ## Available models
