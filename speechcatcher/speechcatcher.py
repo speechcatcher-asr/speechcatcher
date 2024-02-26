@@ -456,7 +456,7 @@ def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rat
             utterance_pos = results[0][-2]
             utterance_hyp = results[0][-3]            
 
-            prev_lines = progress_output(nbests[0], prev_lines)
+            prev_lines = progress_output(results[0][0], prev_lines)
         else:
             prev_lines = progress_output("", prev_lines)
 
