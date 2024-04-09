@@ -18,7 +18,7 @@ Install portaudio, on Mac:
     
 on Linux:
     
-    sudo apt-get install portaudio19-dev python3.10-dev ffmpeg
+    sudo apt-get install portaudio19-dev python3.10-dev ffmpeg libhdf5-dev
 
 For a system-wide and global installation, simply do:
 
