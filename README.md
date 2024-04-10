@@ -12,13 +12,13 @@ The current focus is on German ASR. But more models will follow - stay tuned!
 
 ## Installation instructions:
 
-Install portaudio, on Mac:
+Install portaudio and a few other dependencies, on Mac:
 
-    brew install portaudio ffmpeg
+    brew install portaudio ffmpeg git git-lfs
     
 on Linux:
     
-    sudo apt-get install portaudio19-dev python3.10-dev ffmpeg libhdf5-dev
+    sudo apt-get install portaudio19-dev python3.10-dev ffmpeg libhdf5-dev git git-lfs build-essential
 
 For a system-wide and global installation, simply do:
 
@@ -26,7 +26,7 @@ For a system-wide and global installation, simply do:
 
 ## Virtual environment
 
-If you prefer an installation in a virtual environment, create one first:
+If you prefer an installation in a virtual environment, create one first. For example with python3.11:
 
     virtualenv -p python3.11 speechcatcher_env
 
