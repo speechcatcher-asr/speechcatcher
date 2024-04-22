@@ -434,40 +434,43 @@ def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rat
        frame_pos = ((i + 1) * chunk_length / rate) * 100.
        print('is final @', f'{i}', f'{frame_pos}')
 
-    results = speech2text_global(speech=speech_chunk, is_final=is_final, always_assemble_hyps= not (quiet or progress))
     utterance_text = ''
     utterance_token = []
     utterance_pos = []
     utterance_hyp = {}
 
-    if quiet or progress:
-        if is_final:
-            #nbests = [text for text, token, token_int, hyp in results]
-            
-            utterance_text = results[0][0] if results is not None and len(results) > 0 else ""
-            utterance_token = results[0][1] if results is not None and len(results) > 0 else []
-            utterance_pos = results[0][-2] if results is not None and len(results) > 0 else []
-            utterance_hyp = results[0][-3] if results is not None and len(results) > 0 else {}
-    else:
-        if results is not None and len(results) > 0:
-            #nbests = [text, tokenpos for text, token, token_int, token_pos, hyp in results]
-            utterance_text = results[0][0] #nbests[0] if nbests is not None and len(nbests) > 0 else ""
-            utterance_token = results[0][1]
-            utterance_pos = results[0][-2]
-            utterance_hyp = results[0][-3]            
-
-            prev_lines = progress_output(results[0][0], prev_lines)
+    print("chunk_length:", chunk_length)
+    # avoid sending very short chunks through speech2text_global
+    if chunk_length > 10:
+        results = speech2text_global(speech=speech_chunk, is_final=is_final, always_assemble_hyps= not (quiet or progress))
+        
+        if quiet or progress:
+            if is_final:
+                #nbests = [text for text, token, token_int, hyp in results]
+                
+                utterance_text = results[0][0] if results is not None and len(results) > 0 else ""
+                utterance_token = results[0][1] if results is not None and len(results) > 0 else []
+                utterance_pos = results[0][-2] if results is not None and len(results) > 0 else []
+                utterance_hyp = results[0][-3] if results is not None and len(results) > 0 else {}
         else:
-            prev_lines = progress_output("", prev_lines)
+            if results is not None and len(results) > 0:
+                #nbests = [text, tokenpos for text, token, token_int, token_pos, hyp in results]
+                utterance_text = results[0][0] #nbests[0] if nbests is not None and len(nbests) > 0 else ""
+                utterance_token = results[0][1]
+                utterance_pos = results[0][-2]
+                utterance_hyp = results[0][-3]            
 
-    if is_final:
-        prev_lines = 0
+                prev_lines = progress_output(results[0][0], prev_lines)
+            else:
+                prev_lines = progress_output("", prev_lines)
 
-        if not (quiet or progress) and is_completed(utterance_text):
-            sys.stdout.write('\n')
+        if is_final:
+            prev_lines = 0
+
+            if not (quiet or progress) and is_completed(utterance_text):
+                sys.stdout.write('\n')
 
     return [utterance_text, utterance_token, utterance_pos, utterance_hyp], prev_lines
-    #return [utterance_text, utterance_token, linear_interpolate_pos(utterance_pos), utterance_hyp], prev_lines
 
 
 # List all available microphones on this system
