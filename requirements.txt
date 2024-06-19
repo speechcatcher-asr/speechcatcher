@@ -1,3 +1,4 @@
+setuptools
 torch
 torchaudio
 ffmpeg-python
