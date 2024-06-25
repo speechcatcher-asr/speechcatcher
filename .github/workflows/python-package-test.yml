@@ -8,13 +8,20 @@ jobs:
     strategy:
       matrix:
         python-version: ['3.10', '3.11', '3.12']
+        include:
+          - python-version: '3.10'
+            python-dev-package: 'python3.10-dev'
+          - python-version: '3.11'
+            python-dev-package: 'python3.11-dev'
+          - python-version: '3.12'
+            python-dev-package: 'python3.12-dev'
     steps:
     - name: Checkout code
       uses: actions/checkout@v2
     - name: Install system dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y portaudio19-dev python3.10-dev ffmpeg
+        sudo apt-get install -y portaudio19-dev ffmpeg ${{ matrix.python-dev-package }}
     - name: Set up Python
       uses: actions/setup-python@v2
       with:
