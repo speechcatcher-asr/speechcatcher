@@ -8,7 +8,9 @@ The current focus is on German ASR. But more models will follow - stay tuned!
 
 ## News
 
-* 15.12.2023. New in version 0.3.1: Support for timestamps on the token level. Speechcatcher is now using [espnet_streaming_decoder](https://github.com/speechcatcher-asr/espnet_streaming_decoder) instead of [espnet](https://github.com/espnet/espnet), to make dependencies leaner and to enable token timestamps with streaming models. Speechcatcher does not require a full Espnet installation anymore. It also uses a forked version of [espnet_model_zoo](https://github.com/speechcatcher-asr/espnet_model_zoo), so that model downloads are only checked online if a local cache copy isn't available.
+* 6/25/2024. New in version 0.3.2: Speechcatcher is now Python 3.12 compatible! Under certain conditions some input files would produce an error on the last segment, this now fixed in this version.
+
+* 12/15/2023. New in version 0.3.1: Support for timestamps on the token level. Speechcatcher is now using [espnet_streaming_decoder](https://github.com/speechcatcher-asr/espnet_streaming_decoder) instead of [espnet](https://github.com/espnet/espnet), to make dependencies leaner and to enable token timestamps with streaming models. Speechcatcher does not require a full Espnet installation anymore. It also uses a forked version of [espnet_model_zoo](https://github.com/speechcatcher-asr/espnet_model_zoo), so that model downloads are only checked online if a local cache copy isn't available.
 
 ## Installation instructions:
 
@@ -16,9 +18,9 @@ Install portaudio and a few other dependencies, on Mac:
 
     brew install portaudio ffmpeg git git-lfs
     
-on Linux:
+on Linux (Ubuntu 24.04):
     
-    sudo apt-get install portaudio19-dev python3.10-dev ffmpeg libhdf5-dev git git-lfs build-essential
+    sudo apt-get install portaudio19-dev python3.12-dev ffmpeg libhdf5-dev git git-lfs build-essential
 
 For a system-wide and global installation, simply do:
 
@@ -26,9 +28,9 @@ For a system-wide and global installation, simply do:
 
 ## Virtual environment
 
-If you prefer an installation in a virtual environment, create one first. For example with python3.11:
+If you prefer an installation in a virtual environment, create one first. For example with python3.12:
 
-    virtualenv -p python3.11 speechcatcher_env
+    virtualenv -p python3.12 speechcatcher_env
 
 Note, if you get "-bash: virtualenv: command not found", install virtualenv through pip:  
 
