@@ -8,6 +8,7 @@ import numpy as np
 import argparse
 import subprocess
 import ffmpeg
+from scipy.io import wavfile
 from io import BytesIO
 from threading import Thread
 from queue import Queue, Empty
@@ -16,34 +17,39 @@ from speechcatcher.speechcatcher import (
     is_completed, ensure_dir, segment_speech, Speech2TextStreaming
 )
 
+debug_wav_path = "debug.wav"
+
 class SpeechRecognitionSession:
-    def __init__(self, speech2text, finalize_update_iters=7):
+    def __init__(self, speech2text, audio_format="webm", finalize_update_iters=7):
         self.speech2text = speech2text
         self.finalize_update_iters = finalize_update_iters
         self.n_best_lens = []
         self.prev_lines = 0
         self.blocks = []
+        self.audio_format = audio_format
         self.process = None
         self.stdout_queue = Queue()
         self.stderr_queue = Queue()
         self.start_ffmpeg_process()
+        self.blocks = []
+        self.write_debug_wav = 10
 
-    def start_ffmpeg_process(self):
+    def start_ffmpeg_process(self, debug=False):
         command = [
-            "ffmpeg", "-loglevel", "debug", "-f", "webm", "-i", "pipe:0",
+            "ffmpeg", "-loglevel", "debug" if debug else "info", "-f", self.audio_format, "-i", "pipe:0",
             "-f", "wav", "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000", "pipe:1"
         ]
         self.process = subprocess.Popen(
-            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**8
+            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**7 #10mb buffer
         )
         Thread(target=self.read_from_ffmpeg_stdout, daemon=True).start()
         Thread(target=self.read_from_ffmpeg_stderr, daemon=True).start()
 
     def read_from_ffmpeg_stdout(self):
         while True:
-            output = self.process.stdout.read(1024*2)  #(4096/4)
+            output = self.process.stdout.read(4096)
             if output:
-                print("put output in queue:", len(output), type(output))
+                #print("put output in queue:", len(output), type(output))
                 self.stdout_queue.put(output)
 
     def read_from_ffmpeg_stderr(self):
@@ -57,7 +63,8 @@ class SpeechRecognitionSession:
             self.start_ffmpeg_process()
 
         self.process.stdin.write(audio_chunk)
-        self.process.stdin.flush()  # Ensure data is flushed through FFmpeg
+        # Ensure data is always flushed through FFmpeg
+        self.process.stdin.flush()
         data = b''
 
         try:
@@ -68,22 +75,40 @@ class SpeechRecognitionSession:
 
         return np.frombuffer(data, dtype='int16')
 
-    def process_audio_chunk(self, audio_chunk, is_final=False):
+    # This function processes one chunk of incoming audio
+    def process_audio_chunk(self, audio_chunk, is_final=False, save_debug_wav=False, debug=False):
         print("Incoming audio data len:", len(audio_chunk), type(audio_chunk))
 
         data = self.decode_audio(audio_chunk)
 
         if data.size == 0:
-            print("data was zero:", data)
+            if debug:
+                print("data was zero:", data)
             return ""
+
+        if save_debug_wav:
+            self.blocks.append(data)
+            if len(self.blocks) > self.write_debug_wav:
+                samplerate = 16000    
+                print("\nSaving debug output...")
+                wavfile.write(debug_wav_path, samplerate, np.concatenate(self.blocks, axis=None))
+                
+                self.write_debug_wav += 10
 
         data = data.astype(np.float16) / 32767.0  # Normalize
 
-        print("data after decode audio is:", data)
+        if debug:
+            print("data after decode audio is:", data)
+            print("is final:", is_final)
 
+        # Finalize and start the next sentence
         if is_final:
             results = self.speech2text(speech=data, is_final=True)
             nbests0 = results[0][0]
+            if len(nbests0) >= 1:
+                if nbests0[-1] != '.' and nbests0[-1] != '!' and nbests0[-1] != '?':
+                    nbests0 += '.'
+                nbests0 += '\n'
             return nbests0
 
         if len(self.n_best_lens) < self.finalize_update_iters:
@@ -97,29 +122,36 @@ class SpeechRecognitionSession:
 
         results = self.speech2text(speech=data, is_final=finalize_iteration)
 
-        print("results:", results)
+        if debug:
+            print("results:", results)
 
         if results is not None and len(results) > 0:
             nbests0 = results[0][0]
+            if finalize_iteration:
+                if len(nbests0) >= 1:
+                    if nbests0[-1] != '.' and nbests0[-1] != '!' and nbests0[-1] != '?':
+                        nbests0 += '.'
+                    nbests0 += '\n'
+
             nbest_len = len(nbests0)
             self.n_best_lens.append(nbest_len)
             return nbests0
         return ""
 
-async def recognize_ws(websocket, path, speech2text, format):
+async def recognize_ws(websocket, path, speech2text, audio_format):
     print("Client connected")
-    session = SpeechRecognitionSession(speech2text)
+    session = SpeechRecognitionSession(speech2text, audio_format)
     try:
         async for message in websocket:
-            transcription = session.process_audio_chunk(message, format)
-            print("transcription:", transcription)
+            transcription = session.process_audio_chunk(message)
+            print("transcription:", transcription.replace('\n','<newline>'))
             if transcription:
                 await websocket.send(str(transcription))
     except websockets.exceptions.ConnectionClosed:
         print("Client disconnected")
 
-async def start_server(host, port, speech2text, format):
-    server = await websockets.serve(lambda ws, path: recognize_ws(ws, path, speech2text, format), host, port)
+async def start_server(host, port, speech2text, audio_format):
+    server = await websockets.serve(lambda ws, path: recognize_ws(ws, path, speech2text, audio_format), host, port)
     await server.wait_closed()
 
 def main():
@@ -132,7 +164,7 @@ def main():
                         help="Device to run the ASR model on ('cpu' or 'cuda')")
     parser.add_argument('--beamsize', type=int, default=5, help='Beam size for the decoder')
     parser.add_argument('--cache-dir', type=str, default='~/.cache/espnet', help='Directory for model cache')
-    parser.add_argument('--format', type=str, default='pcm', choices=['pcm', 'webm', 'ogg'],
+    parser.add_argument('--format', type=str, default='webm', choices=['wav', 'mp3', 'mp4', 'pcm', 'webm', 'ogg', 'acc'],
                         help='Audio format for the input stream')
 
     args = parser.parse_args()
