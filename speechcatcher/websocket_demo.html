@@ -116,9 +116,11 @@
         stopButton.addEventListener('click', () => {
             if (mediaRecorder && mediaRecorder.state !== 'inactive') {
                 mediaRecorder.stop();
+		delete mediaRecorder;
             }
             if (socket && socket.readyState === WebSocket.OPEN) {
                 socket.close();
+		delete socket;
             }
             status.textContent = 'Transcription stopped.';
             startButton.disabled = false;
