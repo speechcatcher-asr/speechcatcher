@@ -1,6 +1,7 @@
 # Speechcatcher streaming server interface. Decode speech with speechcatcher streaming models using live data from websockets.
+# 2024, Dr. Benjamin Milde
 #
-# Note: work in progress, doesn't work correctly yet!
+# Note: work in progress!
 
 import asyncio
 import websockets
@@ -10,7 +11,7 @@ import subprocess
 import ffmpeg
 from scipy.io import wavfile
 from io import BytesIO
-from threading import Thread
+from threading import Thread, Lock
 from queue import Queue, Empty
 from speechcatcher.speechcatcher import (
     load_model, tags, progress_output, upperCaseFirstLetter,
@@ -19,6 +20,7 @@ from speechcatcher.speechcatcher import (
 
 debug_wav_path = "debug.wav"
 
+# This class models the lifetime of a client ASR session
 class SpeechRecognitionSession:
     def __init__(self, speech2text, audio_format="webm", finalize_update_iters=7):
         self.speech2text = speech2text
@@ -34,6 +36,8 @@ class SpeechRecognitionSession:
         self.blocks = []
         self.write_debug_wav = 10
 
+    # Each session runs an ffmpeg stream with pipes to convert the input audio.
+    # The ffmpeg process runs through the entire lifetime of a session.
     def start_ffmpeg_process(self, debug=False):
         command = [
             "ffmpeg", "-loglevel", "debug" if debug else "info", "-f", self.audio_format, "-i", "pipe:0",
@@ -49,7 +53,6 @@ class SpeechRecognitionSession:
         while True:
             output = self.process.stdout.read(4096)
             if output:
-                #print("put output in queue:", len(output), type(output))
                 self.stdout_queue.put(output)
 
     def read_from_ffmpeg_stderr(self):
@@ -86,6 +89,7 @@ class SpeechRecognitionSession:
                 print("data was zero:", data)
             return ""
 
+        # Only for debug purposes, save the incoming and converted audio as wav.
         if save_debug_wav:
             self.blocks.append(data)
             if len(self.blocks) > self.write_debug_wav:
@@ -132,26 +136,63 @@ class SpeechRecognitionSession:
                     if nbests0[-1] != '.' and nbests0[-1] != '!' and nbests0[-1] != '?':
                         nbests0 += '.'
                     nbests0 += '\n'
-
-            nbest_len = len(nbests0)
-            self.n_best_lens.append(nbest_len)
+            else:
+                nbest_len = len(nbests0)
+                self.n_best_lens.append(nbest_len)
             return nbests0
         return ""
 
-async def recognize_ws(websocket, path, speech2text, audio_format):
+# This class loads a pool of models that can be used by new client connections
+class Speech2TextPool:
+    def __init__(self, model_tag, device, beam_size, cache_dir, pool_size):
+        self.pool_size = pool_size
+        self.model_tag = model_tag
+        self.device = device
+        self.beam_size = beam_size
+        self.cache_dir = cache_dir
+        self.pool = Queue(maxsize=pool_size)
+        self.lock = Lock()
+
+        i=1
+        # Preload the models
+        for _ in range(pool_size):
+            print("Load instance:",i)
+            model = load_model(tag=model_tag, device=device, beam_size=beam_size, cache_dir=cache_dir)
+            self.pool.put(model)
+            i+=1
+
+    def acquire(self):
+        with self.lock:
+            if self.pool.empty():
+                return None
+            return self.pool.get()
+
+    def release(self, model):
+        with self.lock:
+            self.pool.put(model)
+
+async def recognize_ws(websocket, path, model_pool, audio_format):
     print("Client connected")
+    speech2text = model_pool.acquire()
+    if speech2text is None:
+        await websocket.send("Server busy, please try again later.")
+        await websocket.close()
+        return
+
     session = SpeechRecognitionSession(speech2text, audio_format)
     try:
         async for message in websocket:
             transcription = session.process_audio_chunk(message)
-            print("transcription:", transcription.replace('\n','<newline>'))
+            print("transcription:", transcription.replace('\n', '<newline>'))
             if transcription:
                 await websocket.send(str(transcription))
     except websockets.exceptions.ConnectionClosed:
         print("Client disconnected")
+    finally:
+        model_pool.release(speech2text)
 
-async def start_server(host, port, speech2text, audio_format):
-    server = await websockets.serve(lambda ws, path: recognize_ws(ws, path, speech2text, audio_format), host, port)
+async def start_server(host, port, model_pool, audio_format):
+    server = await websockets.serve(lambda ws, path: recognize_ws(ws, path, model_pool, audio_format), host, port)
     await server.wait_closed()
 
 def main():
@@ -166,6 +207,7 @@ def main():
     parser.add_argument('--cache-dir', type=str, default='~/.cache/espnet', help='Directory for model cache')
     parser.add_argument('--format', type=str, default='webm', choices=['wav', 'mp3', 'mp4', 'pcm', 'webm', 'ogg', 'acc'],
                         help='Audio format for the input stream')
+    parser.add_argument('--pool-size', type=int, default=5, help='Number of speech2text instances to preload')
 
     args = parser.parse_args()
 
@@ -175,14 +217,13 @@ def main():
         exit(1)
 
     tag = tags[args.model]
-    print(f'Loading model: {tag}')
+    print(f'Loading model pool: {tag}')
 
-    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, cache_dir=args.cache_dir)
+    model_pool = Speech2TextPool(model_tag=tag, device=args.device, beam_size=args.beamsize, cache_dir=args.cache_dir, pool_size=args.pool_size)
 
     print(f'Starting WebSocket server on ws://{args.host}:{args.port}')
-    asyncio.get_event_loop().run_until_complete(start_server(args.host, args.port, speech2text, args.format))
+    asyncio.get_event_loop().run_until_complete(start_server(args.host, args.port, model_pool, args.format))
     asyncio.get_event_loop().run_forever()
 
 if __name__ == '__main__':
     main()
-
