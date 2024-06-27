@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speechcatcher ASR Demo</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+        }
+        #status {
+            margin-bottom: 10px;
+        }
+        #transcription {
+            border: 1px solid #ccc;
+            padding: 10px;
+            width: calc(100% - 20px);
+            height: 200px;
+            overflow-y: auto;
+            margin-top: 20px;
+        }
+        button {
+            padding: 10px;
+            font-size: 16px;
+            margin-right: 10px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Speechcatcher ASR Demo</h1>
+    <div id="status">Press "Start" to begin German live transcription.</div>
+    <button id="startButton">Start</button>
+    <button id="stopButton" disabled>Stop</button>
+    <div id="transcription"></div>
+
+    <script>
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const status = document.getElementById('status');
+        const transcriptionDiv = document.getElementById('transcription');
+
+        let socket;
+        let mediaRecorder;
+        let currentTranscriptDiv = null;
+
+        startButton.addEventListener('click', async () => {
+            if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+                alert('Your browser does not support WebRTC. Please use a modern browser.');
+                return;
+            }
+
+            try {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm' });
+
+                mediaRecorder.ondataavailable = event => {
+                    if (event.data.size > 0 && socket.readyState === WebSocket.OPEN) {
+                        socket.send(event.data);
+                    }
+                };
+
+		/*REPLACE THE URL BELOW WITH YOUR WEBSOCKET SPEECHCATCHER SERVER*/
+
+                socket = new WebSocket('wss://localhost/ws/');
+
+                socket.onopen = () => {
+                    status.textContent = 'Connected to the server. Starting transcription...';
+                    mediaRecorder.start(50); // Send audio data in 50ms chunks
+                    startButton.disabled = true;
+                    stopButton.disabled = false;
+                };
+
+                socket.onmessage = event => {
+                    const transcript = event.data;
+
+                    if (transcript.endsWith('\n')) {
+                        if (currentTranscriptDiv) {
+                            currentTranscriptDiv.textContent = transcript.trim();
+                        } else {
+                            currentTranscriptDiv = document.createElement('div');
+                            currentTranscriptDiv.textContent = transcript.trim();
+                            transcriptionDiv.appendChild(currentTranscriptDiv);
+                        }
+                        currentTranscriptDiv = null; // Reset for the next sentence
+                    } else {
+                        if (!currentTranscriptDiv) {
+                            currentTranscriptDiv = document.createElement('div');
+                            transcriptionDiv.appendChild(currentTranscriptDiv);
+                        }
+                        currentTranscriptDiv.textContent = transcript;
+                    }
+
+                    transcriptionDiv.scrollTop = transcriptionDiv.scrollHeight; // Scroll to the bottom
+                };
+
+                socket.onclose = () => {
+                    status.textContent = 'Disconnected from the server.';
+                    startButton.disabled = false;
+                    stopButton.disabled = true;
+                };
+
+                socket.onerror = error => {
+                    console.error('WebSocket error:', error);
+                    status.textContent = 'Error connecting to the server.';
+                    startButton.disabled = false;
+                    stopButton.disabled = true;
+                };
+
+            } catch (error) {
+                console.error('Error accessing the microphone:', error);
+                alert('Error accessing the microphone. Please check your permissions.');
+            }
+        });
+
+        stopButton.addEventListener('click', () => {
+            if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+                mediaRecorder.stop();
+            }
+            if (socket && socket.readyState === WebSocket.OPEN) {
+                socket.close();
+            }
+            status.textContent = 'Transcription stopped.';
+            startButton.disabled = false;
+            stopButton.disabled = true;
+        });
+    </script>
+</body>
+</html>
