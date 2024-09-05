@@ -17,18 +17,20 @@ from speechcatcher.speechcatcher import (
     load_model, tags, progress_output, upperCaseFirstLetter,
     is_completed, ensure_dir, segment_speech, Speech2TextStreaming
 )
+import json
 
 debug_wav_path = "debug.wav"
 
 # This class models the lifetime of a client ASR session
 class SpeechRecognitionSession:
-    def __init__(self, speech2text, audio_format="webm", finalize_update_iters=7):
+    def __init__(self, speech2text, audio_format="webm", finalize_update_iters=7, vosk_output_format=False):
         self.speech2text = speech2text
         self.finalize_update_iters = finalize_update_iters
         self.n_best_lens = []
         self.prev_lines = 0
         self.blocks = []
         self.audio_format = audio_format
+        self.vosk_output_format = vosk_output_format
         self.process = None
         self.stdout_queue = Queue()
         self.stderr_queue = Queue()
@@ -105,7 +107,7 @@ class SpeechRecognitionSession:
             print("data after decode audio is:", data)
             print("is final:", is_final)
 
-        # Finalize and start the next sentence
+        # Process final results
         if is_final:
             results = self.speech2text(speech=data, is_final=True)
             nbests0 = results[0][0]
@@ -113,8 +115,11 @@ class SpeechRecognitionSession:
                 if nbests0[-1] != '.' and nbests0[-1] != '!' and nbests0[-1] != '?':
                     nbests0 += '.'
                 nbests0 += '\n'
+            if self.vosk_output_format:
+                return self.format_vosk_result(results)
             return nbests0
 
+        # Process partial results
         if len(self.n_best_lens) < self.finalize_update_iters:
             finalize_iteration = False
         else:
@@ -131,6 +136,8 @@ class SpeechRecognitionSession:
 
         if results is not None and len(results) > 0:
             nbests0 = results[0][0]
+            if self.vosk_output_format:
+                return self.format_vosk_partial(nbests0)
             if finalize_iteration:
                 if len(nbests0) >= 1:
                     if nbests0[-1] != '.' and nbests0[-1] != '!' and nbests0[-1] != '?':
@@ -141,6 +148,31 @@ class SpeechRecognitionSession:
                 self.n_best_lens.append(nbest_len)
             return nbests0
         return ""
+
+    # Helper function to format partial results in Vosk style
+    def format_vosk_partial(self, partial_text):
+        return {
+            "partial": partial_text
+        }
+
+    # Helper function to format final results in Vosk style
+    def format_vosk_result(self, results):
+        words = []
+        text = ""
+        for token, timestamp in zip(results[0][1], results[0][2]):
+            word_info = {
+                "conf": 1.0,  # Assuming full confidence as Speechcatcher doesn't output confidence scores per token
+                "start": timestamp - 0.1,  # Approximation, adjust as needed
+                "end": timestamp,
+                "word": token
+            }
+            words.append(word_info)
+            text += token + " "
+
+        return {
+            "result": words,
+            "text": text.strip()
+        }
 
 # This class loads a pool of models that can be used by new client connections
 class Speech2TextPool:
@@ -171,7 +203,7 @@ class Speech2TextPool:
         with self.lock:
             self.pool.put(model)
 
-async def recognize_ws(websocket, path, model_pool, audio_format):
+async def recognize_ws(websocket, path, model_pool, audio_format, vosk_output_format):
     print("Client connected")
     speech2text = model_pool.acquire()
     if speech2text is None:
@@ -179,20 +211,22 @@ async def recognize_ws(websocket, path, model_pool, audio_format):
         await websocket.close()
         return
 
-    session = SpeechRecognitionSession(speech2text, audio_format)
+    session = SpeechRecognitionSession(speech2text, audio_format, vosk_output_format=vosk_output_format)
     try:
         async for message in websocket:
             transcription = session.process_audio_chunk(message)
-            print("transcription:", transcription.replace('\n', '<newline>'))
             if transcription:
-                await websocket.send(str(transcription))
+                if vosk_output_format:
+                    await websocket.send(json.dumps(transcription))
+                else:
+                    await websocket.send(str(transcription))
     except websockets.exceptions.ConnectionClosed:
         print("Client disconnected")
     finally:
         model_pool.release(speech2text)
 
-async def start_server(host, port, model_pool, audio_format):
-    server = await websockets.serve(lambda ws, path: recognize_ws(ws, path, model_pool, audio_format), host, port)
+async def start_server(host, port, model_pool, audio_format, vosk_output_format):
+    server = await websockets.serve(lambda ws, path: recognize_ws(ws, path, model_pool, audio_format, vosk_output_format), host, port)
     await server.wait_closed()
 
 def main():
@@ -208,6 +242,7 @@ def main():
     parser.add_argument('--format', type=str, default='webm', choices=['wav', 'mp3', 'mp4', 'pcm', 'webm', 'ogg', 'acc'],
                         help='Audio format for the input stream')
     parser.add_argument('--pool-size', type=int, default=5, help='Number of speech2text instances to preload')
+    parser.add_argument('--vosk-output-format', action='store_true', help='Enable Vosk-like output format')
 
     args = parser.parse_args()
 
@@ -222,7 +257,7 @@ def main():
     model_pool = Speech2TextPool(model_tag=tag, device=args.device, beam_size=args.beamsize, cache_dir=args.cache_dir, pool_size=args.pool_size)
 
     print(f'Starting WebSocket server on ws://{args.host}:{args.port}')
-    asyncio.get_event_loop().run_until_complete(start_server(args.host, args.port, model_pool, args.format))
+    asyncio.get_event_loop().run_until_complete(start_server(args.host, args.port, model_pool, args.format, args.vosk_output_format))
     asyncio.get_event_loop().run_forever()
 
 if __name__ == '__main__':
