@@ -29,7 +29,7 @@ def segment_wav(wav_filename, beam_size=10, ideal_segment_len=1000*4,
                 max_lookahead=100*180, min_len=1000*2, step=10, len_reward = 40, debug=False):
 
     samplerate, data = wavfile.read(wav_filename, mmap=False)
-    segment_speech(samplerate, data, beam_size, ideal_segment_len,
+    return segment_speech(data, samplerate, beam_size, ideal_segment_len,
                 max_lookahead, min_len, step, len_reward, debug)
 
 # All timing are in frames, where one frame is 0.01 seconds.
@@ -134,5 +134,5 @@ if __name__ == '__main__':
             .run(quiet=True)
     )
 
-    result = process_wav(tmp_file, debug=False)
+    result = segment_wav(tmp_file, debug=False)
     print(result)
