@@ -34,9 +34,11 @@ class SpeechRecognitionSession:
         self.process = None
         self.stdout_queue = Queue()
         self.stderr_queue = Queue()
-        self.start_ffmpeg_process()
         self.blocks = []
         self.write_debug_wav = 10
+        self.max_iters = 1024
+        if not self.vosk_output_format:
+            self.start_ffmpeg_process()
 
     # Each session runs an ffmpeg stream with pipes to convert the input audio.
     # The ffmpeg process runs through the entire lifetime of a session.
@@ -64,6 +66,10 @@ class SpeechRecognitionSession:
                 print("FFmpeg stderr:", error.decode().strip())
 
     def decode_audio(self, audio_chunk):
+        # do not use ffmpeg with vosk, read the input stream as 16kHz PCM. 
+        if self.vosk_output_format:
+            return np.frombuffer(audio_chunk, dtype='int16')
+
         if self.process is None:
             self.start_ffmpeg_process()
 
@@ -84,12 +90,22 @@ class SpeechRecognitionSession:
     def process_audio_chunk(self, audio_chunk, is_final=False, save_debug_wav=False, debug=False):
         print("Incoming audio data len:", len(audio_chunk), type(audio_chunk))
 
+        if type(audio_chunk) == str:
+            print(audio_chunk)
+            if self.vosk_output_format:
+                return self.format_vosk_partial("")
+            else:
+                return ""
+
         data = self.decode_audio(audio_chunk)
 
         if data.size == 0:
             if debug:
                 print("data was zero:", data)
-            return ""
+            if self.vosk_output_format:
+                return self.format_vosk_partial("")
+            else:
+                return ""
 
         # Only for debug purposes, save the incoming and converted audio as wav.
         if save_debug_wav:
@@ -119,11 +135,15 @@ class SpeechRecognitionSession:
                 return self.format_vosk_result(results)
             return nbests0
 
-        # Process partial results
-        if len(self.n_best_lens) < self.finalize_update_iters:
+        # Simple on-the-fly endpointing
+        n_best_lens_length = len(self.n_best_lens)
+        if n_best_lens_length < self.finalize_update_iters:
             finalize_iteration = False
+        elif n_best_lens_length > self.max_iters:
+            finalize_iteration = True
         else:
-            if all(x == self.n_best_lens[-1] for x in self.n_best_lens[-10:]):
+            # check if last n (finalize_update_iters) are the same length
+            if all(x == self.n_best_lens[-1] for x in self.n_best_lens[-1*self.finalize_update_iters:]):
                 finalize_iteration = True
                 self.n_best_lens = []
             else:
@@ -136,8 +156,6 @@ class SpeechRecognitionSession:
 
         if results is not None and len(results) > 0:
             nbests0 = results[0][0]
-            if self.vosk_output_format:
-                return self.format_vosk_partial(nbests0)
             if finalize_iteration:
                 if len(nbests0) >= 1:
                     if nbests0[-1] != '.' and nbests0[-1] != '!' and nbests0[-1] != '?':
@@ -146,7 +164,13 @@ class SpeechRecognitionSession:
             else:
                 nbest_len = len(nbests0)
                 self.n_best_lens.append(nbest_len)
-            return nbests0
+            if self.vosk_output_format:
+                if finalize_iteration:
+                    return self.format_vosk_result(results)
+                else:
+                    return self.format_vosk_partial(nbests0)
+            else:
+                return nbests0
         return ""
 
     # Helper function to format partial results in Vosk style
@@ -160,14 +184,14 @@ class SpeechRecognitionSession:
         words = []
         text = ""
         for token, timestamp in zip(results[0][1], results[0][2]):
-            word_info = {
+            token_info = {
                 "conf": 1.0,  # Assuming full confidence as Speechcatcher doesn't output confidence scores per token
-                "start": timestamp - 0.1,  # Approximation, adjust as needed
+                "start": timestamp - 0.1,  # Approximation
                 "end": timestamp,
                 "word": token
             }
-            words.append(word_info)
-            text += token + " "
+            words.append(token_info)
+            text += token
 
         return {
             "result": words,
@@ -213,13 +237,24 @@ async def recognize_ws(websocket, path, model_pool, audio_format, vosk_output_fo
 
     session = SpeechRecognitionSession(speech2text, audio_format, vosk_output_format=vosk_output_format)
     try:
+        last_transcription = ""
+        if vosk_output_format:
+            last_transcription = {"partial":""}
+        #start asyn communication channel with the websocket
         async for message in websocket:
             transcription = session.process_audio_chunk(message)
             if transcription:
                 if vosk_output_format:
+                    output = json.dumps(transcription)
+                    print(output)
                     await websocket.send(json.dumps(transcription))
                 else:
                     await websocket.send(str(transcription))
+                last_transcription = transcription
+            else:
+                # In vosk mode, the client always expects an answer for each audio chunk. 
+                if vosk_output_format:
+                    await websocket.send(json.dumps(last_transcription))
     except websockets.exceptions.ConnectionClosed:
         print("Client disconnected")
     finally:
@@ -239,7 +274,7 @@ def main():
                         help="Device to run the ASR model on ('cpu' or 'cuda')")
     parser.add_argument('--beamsize', type=int, default=5, help='Beam size for the decoder')
     parser.add_argument('--cache-dir', type=str, default='~/.cache/espnet', help='Directory for model cache')
-    parser.add_argument('--format', type=str, default='webm', choices=['wav', 'mp3', 'mp4', 'pcm', 'webm', 'ogg', 'acc'],
+    parser.add_argument('--format', type=str, default='webm', choices=['wav', 'mp3', 'mp4', 's16le', 'webm', 'ogg', 'acc'],
                         help='Audio format for the input stream')
     parser.add_argument('--pool-size', type=int, default=5, help='Number of speech2text instances to preload')
     parser.add_argument('--vosk-output-format', action='store_true', help='Enable Vosk-like output format')
