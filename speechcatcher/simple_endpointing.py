@@ -106,8 +106,9 @@ def segment_speech(data, samplerate, beam_size=10, ideal_segment_len=1000*4,
     
     return segments
 
-if __name__ == '__main__':
-    # Argument parser
+def main():
+    # Allow this tool to be used as a stand alone program. 
+    # Also useful for debugging.
     parser = argparse.ArgumentParser(description='This tool does a simple endpointing beam search over a long audio'
                                                  ' file, to cut it into smaller pieces for ASR processing.')
 
@@ -136,3 +137,6 @@ if __name__ == '__main__':
 
     result = segment_wav(tmp_file, debug=False)
     print(result)
+
+if __name__ == '__main__':
+    main()

@@ -1,7 +1,30 @@
-# Speechcatcher streaming server interface. Decode speech with speechcatcher streaming models using live data from websockets.
-# 2024, Dr. Benjamin Milde
+# Speechcatcher Websocket Streaming ASR Server
 #
-# Note: work in progress!
+# This server provides real-time automatic speech recognition (ASR) for streaming audio data over WebSockets. It is capable 
+# of handling various audio formats and can act as a drop-in replacement for a Vosk server, emulating Vosk's API output. The server 
+# decodes audio streams in real time using streaming ASR models and can manage multiple ASR sessions simultaneously. It preloads a pool of models 
+# for faster initialization, making it possible to handle multiple clients.
+# 
+# Audio format conversion is handled using FFmpeg, ensuring that different input formats, such as wav, mp3, or webm, are converted 
+# to 16kHz mono PCM, which is the required format for the Speechcatcher ASR models. The server also supports optional Vosk-compatible JSON output, allowing 
+# it to be integrated into existing systems based on the Vosk API. It features dynamic endpointing, which finalizes recognition results 
+# based on the input stream ASR results.
+#
+# Example Usage:
+# 
+# Run the websocket server with default settings:
+#    speechcatcher_server
+#    (Uses default model, listens on localhost:8765, CPU-based processing)
+#
+# Run the websocket server with Vosk API emulation mode:
+#    speechcatcher_server --vosk-output-format
+#    (Outputs recognition results in Vosk-compatible JSON format)
+#
+# Change the port number for the WebSocket server and use Vosk API emulation mode:
+#    speechcatcher_server --vosk-output-format --port 2700
+#    (Listens on localhost:2700)
+# 
+# Author: Dr. Benjamin Milde, 2024
 
 import asyncio
 import websockets
@@ -23,6 +46,9 @@ debug_wav_path = "debug.wav"
 
 # This class models the lifetime of a client ASR session
 class SpeechRecognitionSession:
+    '''
+    A SpeechRecognitionSession for a live audio stream.
+    '''
     def __init__(self, speech2text, audio_format="webm", finalize_update_iters=7, vosk_output_format=False):
         self.speech2text = speech2text
         self.finalize_update_iters = finalize_update_iters
@@ -259,6 +285,9 @@ class Speech2TextPool:
             self.pool.put(model)
 
 async def recognize_ws(websocket, path, model_pool, audio_format, vosk_output_format):
+    '''
+        Recognize speech from audio data sent over a websocket connection.
+    '''
     print("Client connected")
     speech2text = model_pool.acquire()
     if speech2text is None:

@@ -17,7 +17,8 @@ setup(
             'speechcatcher=speechcatcher.speechcatcher:main',
             'speechcatcher_compute_wer=speechcatcher.compute_wer:main',
             'speechcatcher_server=speechcatcher.speechcatcher_server:main',
-            'speechcatcher_vosk_test_client=speechcatcher.vosk_test_client:main'
+            'speechcatcher_vosk_test_client=speechcatcher.vosk_test_client:main',
+            'speechcatcher_simple_endpointing=speechcatcher.simple_endpointing:main'
             ]
     },
     classifiers=[
