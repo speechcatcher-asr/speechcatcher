@@ -31,6 +31,7 @@ class SpeechRecognitionSession:
         self.blocks = []
         self.audio_format = audio_format
         self.vosk_output_format = vosk_output_format
+        self.vosk_sample_rate = 16000  # Default to 16kHz PCM, will be overwritten when a vosk config is received.
         self.process = None
         self.stdout_queue = Queue()
         self.stderr_queue = Queue()
@@ -40,18 +41,56 @@ class SpeechRecognitionSession:
         if not self.vosk_output_format:
             self.start_ffmpeg_process()
 
+    def parse_vosk_config(self, config_str):
+        """
+        Parses the Vosk configuration and sets the sample rate if provided.
+        """
+        try:
+            config = json.loads(config_str)
+            if "config" in config and "sample_rate" in config["config"]:
+                self.vosk_sample_rate = int(config["config"]["sample_rate"])
+                print(f"Updated Vosk sample rate to {self.vosk_sample_rate} Hz.")
+                # Restart FFmpeg process with the new sample rate if necessary
+                self.start_ffmpeg_process(vosk_mode=True)
+        except json.JSONDecodeError as e:
+            print(f"Error parsing Vosk config: {e}")
+
     # Each session runs an ffmpeg stream with pipes to convert the input audio.
     # The ffmpeg process runs through the entire lifetime of a session.
-    def start_ffmpeg_process(self, debug=False):
-        command = [
-            "ffmpeg", "-loglevel", "debug" if debug else "info", "-f", self.audio_format, "-i", "pipe:0",
-            "-f", "wav", "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000", "pipe:1"
-        ]
+    def start_ffmpeg_process(self, vosk_mode=False, debug=False):
+        """
+        Starts the FFmpeg process with the correct input sample rate and output format.
+        In Vosk mode, the input audio format is explicitly specified (PCM 16-bit LE, 1 channel).
+        """
+        if vosk_mode:
+            # In Vosk mode, we explicitly set PCM 16-bit LE, 1 channel, and the sample rate from Vosk
+            command = [
+                "ffmpeg", "-loglevel", "debug" if debug else "info",
+                "-f", "s16le",  # PCM 16-bit little-endian
+                "-ac", "1",  # 1 channel
+                "-ar", str(self.vosk_sample_rate),  # Sample rate from Vosk config
+                "-i", "pipe:0",  # Input is piped
+                "-f", "wav", "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",  # Output is 16kHz mono
+                "pipe:1"  # Output is piped
+            ]
+        else:
+            # In Speechcatcher mode, let FFmpeg infer the format from the file header
+            command = [
+                "ffmpeg", "-loglevel", "debug" if debug else "info",
+                "-f", self.audio_format, "-i", "pipe:0",  # Let FFmpeg infer the format
+                "-f", "wav", "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",  # Output is 16kHz mono
+                "pipe:1"
+            ]
+
+        if self.process:
+            self.process.terminate()  # Ensure we terminate the previous process if it exists
+
         self.process = subprocess.Popen(
-            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**7 #10mb buffer
+            command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**7  # 10MB buffer
         )
         Thread(target=self.read_from_ffmpeg_stdout, daemon=True).start()
         Thread(target=self.read_from_ffmpeg_stderr, daemon=True).start()
+
 
     def read_from_ffmpeg_stdout(self):
         while True:
@@ -66,8 +105,8 @@ class SpeechRecognitionSession:
                 print("FFmpeg stderr:", error.decode().strip())
 
     def decode_audio(self, audio_chunk):
-        # do not use ffmpeg with vosk, read the input stream as 16kHz PCM. 
-        if self.vosk_output_format:
+        # Do not use ffmpeg with vosk if the audio chunks are already 16kHz PCM. 
+        if self.vosk_output_format and self.vosk_sample_rate == 16000:
             return np.frombuffer(audio_chunk, dtype='int16')
 
         if self.process is None:
@@ -90,10 +129,11 @@ class SpeechRecognitionSession:
     def process_audio_chunk(self, audio_chunk, is_final=False, save_debug_wav=False, debug=False):
         print("Incoming audio data len:", len(audio_chunk), type(audio_chunk))
 
-        if type(audio_chunk) == str:
-            print(audio_chunk)
+        if isinstance(audio_chunk, str):
+            print("Received configuration message:", audio_chunk)
             if self.vosk_output_format:
-                return self.format_vosk_partial("")
+                self.parse_vosk_config(audio_chunk)
+                return self.format_vosk_partial("")  # Return empty result for config message
             else:
                 return ""
 
