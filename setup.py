@@ -16,8 +16,9 @@ setup(
         'console_scripts': [
             'speechcatcher=speechcatcher.speechcatcher:main',
             'speechcatcher_compute_wer=speechcatcher.compute_wer:main',
-            'speechcatcher_server=speechcatcher.speechcatcher_server:main'
-        ]
+            'speechcatcher_server=speechcatcher.speechcatcher_server:main',
+            'speechcatcher_vosk_test_client=speechcatcher.vosk_test_client:main'
+            ]
     },
     classifiers=[
         "Programming Language :: Python :: 3",
