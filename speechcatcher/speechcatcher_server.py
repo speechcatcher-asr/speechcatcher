@@ -23,6 +23,9 @@ debug_wav_path = "debug.wav"
 
 # This class models the lifetime of a client ASR session
 class SpeechRecognitionSession:
+    '''
+    A SpeechRecognitionSession for a live audio stream.
+    '''
     def __init__(self, speech2text, audio_format="webm", finalize_update_iters=7, vosk_output_format=False):
         self.speech2text = speech2text
         self.finalize_update_iters = finalize_update_iters
@@ -219,6 +222,9 @@ class Speech2TextPool:
             self.pool.put(model)
 
 async def recognize_ws(websocket, path, model_pool, audio_format, vosk_output_format):
+    '''
+        Recognize speech from audio data sent over a websocket connection.
+    '''
     print("Client connected")
     speech2text = model_pool.acquire()
     if speech2text is None:
