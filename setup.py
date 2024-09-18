@@ -5,7 +5,7 @@ with open('requirements.txt') as f:
 
 setup(
     name='speechcatcher',
-    version='0.3.3',
+    version='0.4.0',
     author="Benjamin Milde",
     author_email="bmilde@users.noreply.github.com",
     description="Speechcatcher is an open source toolbox for transcribing speech from media files (audio/video).",
