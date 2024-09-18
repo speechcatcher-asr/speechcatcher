@@ -69,11 +69,8 @@ class BeamSearch:
         best_cuts = sequences[0][0] if sequences[0][0] != [0] else [0, fbank_feat_len]
         return list(zip(best_cuts[:-1], best_cuts[1:]))
 
-def segment_wav(wav_filename, beam_search, max_segment_len_sec=180, debug=False, visual_debug=False):
-    samplerate, data = wavfile.read(wav_filename, mmap=False)
-    return segment_speech(data, samplerate, beam_search, max_segment_len_sec, debug, visual_debug)
 
-def segment_speech(data, samplerate, beam_search, max_segment_len_sec=180, debug=False, visual_debug=False):
+def segment_speech_core(data, samplerate, beam_search, max_segment_len_sec=180, debug=False, visual_debug=False):
     fbank_feat = logfbank(data, samplerate=samplerate, winlen=0.025, winstep=0.01)
     fbank_feat_power = fbank_feat.sum(axis=-1) / 10.0
     fbank_feat_power_smoothed = gaussian_filter1d(fbank_feat_power, sigma=20) * -1.0
@@ -99,6 +96,45 @@ def segment_speech(data, samplerate, beam_search, max_segment_len_sec=180, debug
         print_debug_info(beam_search, constrained_segments, samplerate)
 
     return constrained_segments
+
+def segment_speech(data, samplerate, 
+                   average_segment_length=60.0, max_segment_len_sec=180, 
+                   beam_size=10, step=10, len_reward=40, 
+                   len_reward_weight=12.0, energy_weight=1.0, 
+                   debug=False, visual_debug=False):
+    """
+    This function initializes the BeamSearch class with default values for common
+    parameters (similar to argparse setup) and processes the provided audio data
+    into segmented pieces based on energy and target segment length.
+    
+    Args:
+        data: The audio data to be segmented (numpy array).
+        samplerate: The sample rate of the audio data (int).
+        average_segment_length: The desired average segment length in seconds (float).
+        max_segment_len_sec: The maximum allowable segment length in seconds (float).
+        beam_size: The beam size for the beam search (int).
+        step: The step size for the beam search (int).
+        len_reward: The length reward factor for beam search (float).
+        len_reward_weight: Weight for the length reward component in the cost function (float).
+        energy_weight: Weight for the energy component in the cost function (float).
+        debug: Enable debugging with detailed statistics (bool).
+        visual_debug: Enable visual debugging with plots (bool).
+
+    Returns:
+        List of segment boundaries (start, end) in frames.
+    """
+
+    # Initialize BeamSearch with the given parameters
+    beam_search = BeamSearch(
+        beam_size=beam_size,
+        ideal_segment_len=int(average_segment_length * 100),  # Convert average segment length from seconds to frames
+        step=step,
+        len_reward_weight=len_reward_weight,
+        energy_weight=energy_weight
+    )
+
+    # Process the audio data and return the segment boundaries
+    return segment_speech_core(data, samplerate, beam_search, max_segment_len_sec, debug, visual_debug)
 
 def print_debug_info(beam_search, segments, samplerate):
     print("\n--- Debug Info ---\n")
@@ -136,6 +172,11 @@ def print_debug_info(beam_search, segments, samplerate):
 
     print("\nEnergy at cut statistics:")
     print(f"Mean: {mean_energy:.2f}, Variance: {var_energy:.2f}, Min: {min_energy:.2f}, Max: {max_energy:.2f}")
+
+# used by main to read from a wav_filename (used for debug)
+def segment_wav(wav_filename, beam_search, max_segment_len_sec=180, debug=False, visual_debug=False):
+    samplerate, data = wavfile.read(wav_filename, mmap=False)
+    return segment_speech_core(data, samplerate, beam_search, max_segment_len_sec, debug, visual_debug)
 
 def main():
     parser = argparse.ArgumentParser(description='Endpointing tool to cut long audio into smaller pieces for ASR processing.')
