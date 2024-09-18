@@ -101,7 +101,7 @@ class SpeechRecognitionSession:
 
         if data.size == 0:
             if debug:
-                print("data was zero:", data)
+                print("Data was zero:", data)
             if self.vosk_output_format:
                 return self.format_vosk_partial("")
             else:
@@ -120,22 +120,10 @@ class SpeechRecognitionSession:
         data = data.astype(np.float16) / 32767.0  # Normalize
 
         if debug:
-            print("data after decode audio is:", data)
-            print("is final:", is_final)
+            print("Data after decode audio is:", data)
+            print("Is final:", is_final)
 
-        # Process final results
-        if is_final:
-            results = self.speech2text(speech=data, is_final=True)
-            nbests0 = results[0][0]
-            if len(nbests0) >= 1:
-                if nbests0[-1] != '.' and nbests0[-1] != '!' and nbests0[-1] != '?':
-                    nbests0 += '.'
-                nbests0 += '\n'
-            if self.vosk_output_format:
-                return self.format_vosk_result(results)
-            return nbests0
-
-        # Simple on-the-fly endpointing
+        # Simple on-the-fly endpointing.
         n_best_lens_length = len(self.n_best_lens)
         if n_best_lens_length < self.finalize_update_iters:
             finalize_iteration = False
@@ -152,7 +140,7 @@ class SpeechRecognitionSession:
         results = self.speech2text(speech=data, is_final=finalize_iteration)
 
         if debug:
-            print("results:", results)
+            print("Results:", results)
 
         if results is not None and len(results) > 0:
             nbests0 = results[0][0]
@@ -240,7 +228,7 @@ async def recognize_ws(websocket, path, model_pool, audio_format, vosk_output_fo
         last_transcription = ""
         if vosk_output_format:
             last_transcription = {"partial":""}
-        #start asyn communication channel with the websocket
+        # Start asyn communication channel with the websocket
         async for message in websocket:
             transcription = session.process_audio_chunk(message)
             if transcription:
@@ -252,8 +240,11 @@ async def recognize_ws(websocket, path, model_pool, audio_format, vosk_output_fo
                     await websocket.send(str(transcription))
                 last_transcription = transcription
             else:
-                # In vosk mode, the client always expects an answer for each audio chunk. 
+                # In vosk mode, the client always expects an answer for each audio chunk.
+                # Take care to send the result JSON just once
                 if vosk_output_format:
+                    if last_transcription.starts_with('{"result":'):
+                        last_transcription = {"partial":""}
                     await websocket.send(json.dumps(last_transcription))
     except websockets.exceptions.ConnectionClosed:
         print("Client disconnected")
