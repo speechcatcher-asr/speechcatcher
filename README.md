@@ -8,6 +8,8 @@ The current focus is on German ASR. But more models will follow - stay tuned!
 
 ## News
 
+* 8/19/2024. New in version 0.4.0: Speechcatcher now has a websocket server (speechcatcher_server) for live transcription.
+
 * 6/25/2024. New in version 0.3.2: Speechcatcher is now Python 3.12 compatible! Under certain conditions some input files would produce an error on the last segment, this now fixed in this version.
 
 * 12/15/2023. New in version 0.3.1: Support for timestamps on the token level. Speechcatcher is now using [espnet_streaming_decoder](https://github.com/speechcatcher-asr/espnet_streaming_decoder) instead of [espnet](https://github.com/espnet/espnet), to make dependencies leaner and to enable token timestamps with streaming models. Speechcatcher does not require a full Espnet installation anymore. It also uses a forked version of [espnet_model_zoo](https://github.com/speechcatcher-asr/espnet_model_zoo), so that model downloads are only checked online if a local cache copy isn't available.
@@ -53,6 +55,10 @@ After you have succesfully installed speechcatcher, you can decode any media fil
 or to transcribe data live from your microphone:
 
     speechcatcher -l
+
+or to launch a Vosk compatible websocket server for live transcription on ws://localhost:2700/ 
+
+    speechcatcher_server --vosk-output-format --port 2700
 
 All required model files are downloaded automatically and placed into a ".cache" directory.
 
@@ -133,6 +139,29 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
                             Set number of threads used for intraop parallelism on CPU in pytorch.
       -n NUM_PROCESSES, --num-processes NUM_PROCESSES
                             Set number of processes used for processing long audio files in parallel (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() divided by two.
+
+## Speechcatcher websocket parameters
+
+    usage: speechcatcher_server [-h] [--host HOST] [--port PORT] [--model {de_streaming_transformer_m,de_streaming_transformer_l,de_streaming_transformer_xl}] [--device {cpu,cuda}] [--beamsize BEAMSIZE]
+                                [--cache-dir CACHE_DIR] [--format {wav,mp3,mp4,s16le,webm,ogg,acc}] [--pool-size POOL_SIZE] [--vosk-output-format]
+
+    Speechcatcher WebSocket Server for streaming ASR
+
+    options:
+      -h, --help            show this help message and exit
+      --host HOST           Host for the WebSocket server
+      --port PORT           Port for the WebSocket server
+      --model {de_streaming_transformer_m,de_streaming_transformer_l,de_streaming_transformer_xl}
+                            Model to use for ASR
+      --device {cpu,cuda}   Device to run the ASR model on ('cpu' or 'cuda')
+      --beamsize BEAMSIZE   Beam size for the decoder
+      --cache-dir CACHE_DIR
+                            Directory for model cache
+      --format {wav,mp3,mp4,s16le,webm,ogg,acc}
+                            Audio format for the input stream
+      --pool-size POOL_SIZE
+                            Number of speech2text instances to preload
+      --vosk-output-format  Enable Vosk-like output format
 
 ## Speechcatcher training
 
