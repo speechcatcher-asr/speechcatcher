@@ -168,22 +168,25 @@ class SpeechRecognitionSession:
         }
 
     # Helper function to format final results in Vosk style
-    def format_vosk_result(self, results):
+    def format_vosk_result(self, results, output_token_timestamps=True):
         words = []
         text = ""
-        for token, timestamp in zip(results[0][1], results[0][2]):
-            token_info = {
-                "conf": 1.0,  # Assuming full confidence as Speechcatcher doesn't output confidence scores per token
-                "start": timestamp - 0.1,  # Approximation
-                "end": timestamp,
-                "word": token
-            }
-            words.append(token_info)
-            text += token
+        if output_token_timestamps:
+            # Note that we don't return words here, but simply the output tokens of the speechcatcher decoder
+            for token, timestamp in zip(results[0][1], results[0][2]):
+                token_info = {
+                    "conf": 1.0,  # Assuming full confidence as Speechcatcher doesn't output confidence scores per token
+                    "start": timestamp - 0.1,  # Approximation
+                    "end": timestamp,
+                    "word": token.replace("\u2581", " ")
+                }
+                words.append(token_info)
+                text += token
 
         return {
             "result": words,
-            "text": text.strip()
+            # The espnet decoder returns \u2581 as space token
+            "text": text.replace("\u2581", " ").strip()
         }
 
 # This class loads a pool of models that can be used by new client connections
@@ -243,7 +246,7 @@ async def recognize_ws(websocket, path, model_pool, audio_format, vosk_output_fo
                 # In vosk mode, the client always expects an answer for each audio chunk.
                 # Take care to send the result JSON just once
                 if vosk_output_format:
-                    if last_transcription.starts_with('{"result":'):
+                    if "result" in last_transcription:
                         last_transcription = {"partial":""}
                     await websocket.send(json.dumps(last_transcription))
     except websockets.exceptions.ConnectionClosed:
