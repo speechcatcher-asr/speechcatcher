@@ -6,8 +6,19 @@ import math
 from python_speech_features import logfbank
 from scipy.ndimage import gaussian_filter1d
 import numpy as np
-import matplotlib.pyplot as plt
 
+"""
+The endpointing algorithm below performs segmentation of long audio files by balancing segment length and energy-based decisions.
+It aims to create segments of speech that are close to a specified average length, while also ensuring that cuts are made
+at points where the energy of the audio signal is low (indicative of pauses or silences).
+
+The algorithm uses beam search to explore different possible segmentations, optimizing for a combination of length reward
+(how close the segment is to the target length) and energy at the cut (lower energy is preferable).
+
+Weights can be applied to control the trade-off between these two factors:
+- A higher length reward weight favors segments that are closer to the target length.
+- A higher energy weight favors cuts made in lower-energy regions (such as pauses).
+"""
 class BeamSearch:
     def __init__(self, beam_size=10, ideal_segment_len=4000, max_lookahead=18000, min_len=2000, step=10,
                  len_reward_weight=1.0, energy_weight=1.0):
@@ -139,6 +150,9 @@ def main():
     parser.add_argument('--visual-debug', help='Enable visual debugging with plots.', action='store_true')
     parser.add_argument('filename', help='Path of the audio file.', type=str)
     args = parser.parse_args()
+
+    if args.visual_debug:
+        import matplotlib.pyplot as plt
 
     filename = args.filename
     tmp_file = f'tmp/{hex(abs(hash(filename)))[2:]}.wav'
