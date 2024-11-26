@@ -284,7 +284,7 @@ class Speech2TextPool:
         with self.lock:
             self.pool.put(model)
 
-async def recognize_ws(websocket, path, model_pool, audio_format, vosk_output_format):
+async def recognize_ws(websocket, path, model_pool, audio_format, finalize_update_iters, vosk_output_format):
     '''
         Recognize speech from audio data sent over a websocket connection.
     '''
@@ -295,7 +295,7 @@ async def recognize_ws(websocket, path, model_pool, audio_format, vosk_output_fo
         await websocket.close()
         return
 
-    session = SpeechRecognitionSession(speech2text, audio_format, vosk_output_format=vosk_output_format)
+    session = SpeechRecognitionSession(speech2text, audio_format, finalize_update_iters=finalize_update_iters, vosk_output_format=vosk_output_format)
     try:
         last_transcription = ""
         if vosk_output_format:
@@ -323,8 +323,8 @@ async def recognize_ws(websocket, path, model_pool, audio_format, vosk_output_fo
     finally:
         model_pool.release(speech2text)
 
-async def start_server(host, port, model_pool, audio_format, vosk_output_format):
-    server = await websockets.serve(lambda ws, path: recognize_ws(ws, path, model_pool, audio_format, vosk_output_format), host, port)
+async def start_server(host, port, model_pool, audio_format, finalize_update_iters, vosk_output_format):
+    server = await websockets.serve(lambda ws, path: recognize_ws(ws, path, model_pool, audio_format, finalize_update_iters, vosk_output_format), host, port)
     await server.wait_closed()
 
 def main():
@@ -341,6 +341,7 @@ def main():
                         help='Audio format for the input stream')
     parser.add_argument('--pool-size', type=int, default=5, help='Number of speech2text instances to preload')
     parser.add_argument('--vosk-output-format', action='store_true', help='Enable Vosk-like output format')
+    parser.add_argument('--finalize-update-iters', type=int, default=7, help='Number of iterations with no new update from the ASR util an utterance is finalized.')
 
     args = parser.parse_args()
 
@@ -355,7 +356,7 @@ def main():
     model_pool = Speech2TextPool(model_tag=tag, device=args.device, beam_size=args.beamsize, cache_dir=args.cache_dir, pool_size=args.pool_size)
 
     print(f'Starting WebSocket server on ws://{args.host}:{args.port}')
-    asyncio.get_event_loop().run_until_complete(start_server(args.host, args.port, model_pool, args.format, args.vosk_output_format))
+    asyncio.get_event_loop().run_until_complete(start_server(args.host, args.port, model_pool, args.format, args.finalize_update_iters, args.vosk_output_format))
     asyncio.get_event_loop().run_forever()
 
 if __name__ == '__main__':
