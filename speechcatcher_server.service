@@ -1,0 +1,16 @@
+[Unit]
+Description=Speechcatcher Server
+After=network.target
+
+[Service]
+User=me
+Group=me
+WorkingDirectory=/home/me/speechcatcher_env
+Environment="VIRTUAL_ENV=/home/me/speechcatcher_env"
+Environment="PATH=/home/me/speechcatcher_env/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+ExecStart=/home/me/speechcatcher_env/bin/speechcatcher_server --host 127.0.0.1 --port 2700 --beamsize 3 --vosk-output-format
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
