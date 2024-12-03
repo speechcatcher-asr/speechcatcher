@@ -195,6 +195,7 @@ class SpeechRecognitionSession:
             finalize_iteration = False
         elif n_best_lens_length > self.max_iters:
             finalize_iteration = True
+            self.n_best_lens = []
         else:
             # check if last n (finalize_update_iters) are the same length
             if all(x == self.n_best_lens[-1] for x in self.n_best_lens[-1*self.finalize_update_iters:]):
