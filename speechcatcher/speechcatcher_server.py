@@ -333,19 +333,19 @@ async def start_server(host, port, model_pool, audio_format, finalize_update_ite
 def main():
     parser = argparse.ArgumentParser(description="Speechcatcher WebSocket Server for streaming ASR")
     parser.add_argument('--host', type=str, default='localhost', help='Host for the WebSocket server')
-    parser.add_argument('--port', type=int, default=8765, help='Port for the WebSocket server')
+    parser.add_argument('--port', type=int, default=2700, help='Port for the WebSocket server')
     parser.add_argument('--model', type=str, default='de_streaming_transformer_xl', choices=tags.keys(),
                         help='Model to use for ASR')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
                         help="Device to run the ASR model on ('cpu' or 'cuda')")
-    parser.add_argument('--beamsize', type=int, default=5, help='Beam size for the decoder')
+    parser.add_argument('--beamsize', type=int, default=3, help='Beam size for the decoder')
     parser.add_argument('--cache-dir', type=str, default='~/.cache/espnet', help='Directory for model cache')
     parser.add_argument('--format', type=str, default='webm', choices=['wav', 'mp3', 'mp4', 's16le', 'webm', 'ogg', 'acc'],
                         help='Audio format for the input stream')
-    parser.add_argument('--pool-size', type=int, default=5, help='Number of speech2text instances to preload')
+    parser.add_argument('--pool-size', type=int, default=8, help='Number of speech2text instances to preload')
     parser.add_argument('--vosk-output-format', action='store_true', help='Enable Vosk-like output format')
-    parser.add_argument('--finalize-update-iters', type=int, default=7, help='Number of iterations with no new update from the ASR util an utterance is finalized.')
-    parser.add_argument('--max_partial_iters', type=int, default=512, help='Maximum number of iterations until utterance finalization is forced.')
+    parser.add_argument('--finalize-update-iters', type=int, default=6, help='Number of iterations with no new update from the ASR util an utterance is finalized.')
+    parser.add_argument('--max_partial_iters', type=int, default=42, help='Maximum number of iterations until utterance finalization is forced.')
 
     args = parser.parse_args()
 
