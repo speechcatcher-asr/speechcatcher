@@ -78,25 +78,32 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
                                 decoder_text_length_limit=0, encoded_feat_length_limit=0
                                 )
 
-
 # Convert input file to 16 kHz mono, use stdout to capture the output in-memory
 def convert_inputfile_inmemory(filename):
-    out, _ = (
-        ffmpeg.input(filename)
-            .output('pipe:', format='wav', acodec='pcm_s16le', ac=1, ar='16k')
-            .run(quiet=True, overwrite_output=True)
-    )
-
-    return out
-
+    try:
+        out, _ = (
+            ffmpeg.input(filename)
+                .output('pipe:', format='wav', acodec='pcm_s16le', ac=1, ar='16k')
+                .run(quiet=False, overwrite_output=True)  # Set quiet=False to show ffmpeg logs
+        )
+        return out
+    except ffmpeg.Error as e:
+        print("FFmpeg error occurred:")
+        print(e.stderr.decode('utf-8'))  # Decode and print the stderr for detailed ffmpeg error
+        raise
 
 # Convert input file to 16 kHz mono
 def convert_inputfile(filename, outfile_wav):
-    return (
-        ffmpeg.input(filename)
-            .output(outfile_wav, acodec='pcm_s16le', ac=1, ar='16k')
-            .run(quiet=True, overwrite_output=True))
-
+    try:
+        return (
+            ffmpeg.input(filename)
+                .output(outfile_wav, acodec='pcm_s16le', ac=1, ar='16k')
+                .run(quiet=False, overwrite_output=True)  # Set quiet=False to show ffmpeg logs
+        )
+    except ffmpeg.Error as e:
+        print("FFmpeg error occurred:")
+        print(e.stderr.decode('utf-8'))  # Decode and print the stderr for detailed ffmpeg error
+        raise
 
 # Uses ANSI esc codes to delete previous lines. Resets the cursor to the beginning of an empty first line.
 # see https://stackoverflow.com/questions/19596750/is-there-a-way-to-clear-your-printed-text-in-python
