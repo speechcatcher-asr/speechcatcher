@@ -1,142 +1,224 @@
-#!/usr/bin/env python
-# -*- coding: utf-8 -*-
-
-#    Copyright 2022 HITeC e.V., Benjamin Milde and Robert Geislinger
-#
-#    Licensed under the Apache License, Version 2.0 (the 'License');
-#    you may not use this file except in compliance with the License.
-#    You may obtain a copy of the License at
-#
-#        http://www.apache.org/licenses/LICENSE-2.0
-#
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an 'AS IS' BASIS,
-#    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-#    See the License for the specific language governing permissions and
-#    limitations under the License.
-
 import argparse
 import scipy
 from scipy.io import wavfile
 import ffmpeg
-#import pylab as plt
 import math
 from python_speech_features import logfbank
 from scipy.ndimage import gaussian_filter1d
 import numpy as np
 
-def segment_wav(wav_filename, beam_size=10, ideal_segment_len=1000*4,
-                max_lookahead=100*180, min_len=1000*2, step=10, len_reward = 40, debug=False):
+"""
+The endpointing algorithm below performs segmentation of long audio files by balancing segment length and energy-based decisions.
+It aims to create segments of speech that are close to a specified average length, while also ensuring that cuts are made
+at points where the energy of the audio signal is low (indicative of pauses or silences).
 
-    samplerate, data = wavfile.read(wav_filename, mmap=False)
-    return segment_speech(data, samplerate, beam_size, ideal_segment_len,
-                max_lookahead, min_len, step, len_reward, debug)
+The algorithm uses beam search to explore different possible segmentations, optimizing for a combination of length reward
+(how close the segment is to the target length) and energy at the cut (lower energy is preferable).
 
-# All timing are in frames, where one frame is 0.01 seconds.
-def segment_speech(data, samplerate, beam_size=10, ideal_segment_len=1000*4,
-                max_lookahead=100*180, min_len=1000*2, step=10, len_reward = 40, debug=False):
+Weights can be applied to control the trade-off between these two factors:
+- A higher length reward weight favors segments that are closer to the target length.
+- A higher energy weight favors cuts made in lower-energy regions (such as pauses).
+"""
+class BeamSearch:
+    def __init__(self, beam_size=10, ideal_segment_len=4000, max_lookahead=18000, min_len=2000, step=10,
+                 len_reward_weight=1.0, energy_weight=1.0):
+        self.beam_size = beam_size
+        self.ideal_segment_len = ideal_segment_len
+        self.max_lookahead = max_lookahead
+        self.min_len = min_len
+        self.step = step
+        self.len_reward_weight = len_reward_weight
+        self.energy_weight = energy_weight
+        self.len_reward_factor = len_reward_weight / float(ideal_segment_len)
 
+        self.length_rewards = []
+        self.energy_at_cuts = []
+
+    def cost_function(self, segment_length, energy_at_cut):
+        length_reward = self.len_reward_factor * (self.ideal_segment_len - abs(self.ideal_segment_len - float(segment_length)))
+        self.length_rewards.append(length_reward)
+        self.energy_at_cuts.append(energy_at_cut)
+        return (self.len_reward_weight * length_reward) + (self.energy_weight * energy_at_cut)
+
+    def search(self, smoothed_energy, fbank_feat_len):
+        sequences = [[[0], 0.0]]  # Start with the first position
+        while True:
+            all_candidates = []
+            expand = False
+
+            for seq_pos, current_score in sequences:
+                last_cut = seq_pos[-1]
+                score_at_k = sequences[-1][1]
+
+                for j in range(self.min_len, min(self.max_lookahead, fbank_feat_len - last_cut - 1), self.step):
+                    energy_at_cut = smoothed_energy[last_cut + j]
+                    new_score = current_score + self.cost_function(j, energy_at_cut)
+
+                    if new_score > current_score:
+                        candidate = [seq_pos + [last_cut + j + 1], new_score]
+                        all_candidates.append(candidate)
+                    
+                    if new_score > score_at_k:
+                        expand = True
+
+            if not all_candidates or not expand:
+                break
+
+            sequences = sorted(all_candidates, key=lambda tup: tup[1], reverse=True)[:self.beam_size]
+
+        best_cuts = sequences[0][0] if sequences[0][0] != [0] else [0, fbank_feat_len]
+        return list(zip(best_cuts[:-1], best_cuts[1:]))
+
+
+def segment_speech_core(data, samplerate, beam_search, max_segment_len_sec=180, debug=False, visual_debug=False):
     fbank_feat = logfbank(data, samplerate=samplerate, winlen=0.025, winstep=0.01)
-    fbank_feat_power = fbank_feat.sum(axis=-1) / 10.
-    
-    fbank_feat_len = len(fbank_feat)
-
-    fbank_feat_min_power = min(fbank_feat_power)
-    fbank_feat_max_power = max(fbank_feat_power)
-
-    # We are using a gaussian 1d filter, to smooth the energy signal
+    fbank_feat_power = fbank_feat.sum(axis=-1) / 10.0
     fbank_feat_power_smoothed = gaussian_filter1d(fbank_feat_power, sigma=20) * -1.0
-    
-    if debug:
-        print('min:', fbank_feat_min_power, 'max:', fbank_feat_max_power)
 
-    # You can view this smoothed function in a plot if you set debug=True
-    if debug:
-        plt.imshow(fbank_feat[:1000].T, interpolation=None, aspect='auto', origin='lower')
-        plt.show()
+    if visual_debug:
         plt.plot(fbank_feat_power_smoothed[:1000])
         plt.show()
 
-    cont_search = True
+    fbank_feat_len = len(fbank_feat)
+    segments = beam_search.search(fbank_feat_power_smoothed, fbank_feat_len)
 
-    len_reward_factor = len_reward / float(ideal_segment_len)
+    # Ensure no segment is longer than max_segment_len_sec (in frames)
+    max_segment_len_frames = max_segment_len_sec * 100  # 1 sec = 100 frames
+    constrained_segments = []
 
-    # Simple Beam search to find good segment cuts, where the eneregy is low and where its
-    # still close to the ideal segment length.
-    # Sequences are of this shape; first list keeps track of the split positions,
-    # the float value is the combined score for the complete path.
-    sequences = [[[0], 0.0]]
-    sequences_ordered = [[]]
+    for start, end in segments:
+        while end - start > max_segment_len_frames:
+            constrained_segments.append((start, start + max_segment_len_frames))
+            start += max_segment_len_frames
+        constrained_segments.append((start, end))
+
+    if debug:
+        print_debug_info(beam_search, constrained_segments, samplerate)
+
+    return constrained_segments
+
+def segment_speech(data, samplerate, 
+                   average_segment_length=60.0, max_segment_len_sec=180, 
+                   beam_size=10, step=10, len_reward=40, 
+                   len_reward_weight=12.0, energy_weight=1.0, 
+                   debug=False, visual_debug=False):
+    """
+    This function initializes the BeamSearch class with default values for common
+    parameters (similar to argparse setup) and processes the provided audio data
+    into segmented pieces based on energy and target segment length.
     
-    while cont_search:
-        all_candidates = sequences
-        cont_search = False
-        # Expand each current candidate
-        for i in range(len(sequences)):
-            seq_pos, current_score = sequences[i]
-            last_cut = (seq_pos[-1] if (len(seq_pos) > 0) else 0)
-            score_at_k = sequences[-1][1]
-            # Search over all tokens, min_len to max_lookahead
-            for j in range(min_len, min(max_lookahead, fbank_feat_len - last_cut - 1), step): # <-- TODO without -1?
-                len_reward = len_reward_factor * (ideal_segment_len - math.fabs(ideal_segment_len - float(j)))
-                fbank_score = fbank_feat_power_smoothed[last_cut+j]
-                new_score = current_score + len_reward + fbank_score
-                if new_score > current_score:
-                    candidate = [seq_pos + [last_cut + j + 1], new_score]
-                    all_candidates.append(candidate)
-                # Only continue the search, of at least one of the candidates was better than the current score at k
-                if new_score > score_at_k:
-                    cont_search = True
+    Args:
+        data: The audio data to be segmented (numpy array).
+        samplerate: The sample rate of the audio data (int).
+        average_segment_length: The desired average segment length in seconds (float).
+        max_segment_len_sec: The maximum allowable segment length in seconds (float).
+        beam_size: The beam size for the beam search (int).
+        step: The step size for the beam search (int).
+        len_reward: The length reward factor for beam search (float).
+        len_reward_weight: Weight for the length reward component in the cost function (float).
+        energy_weight: Weight for the energy component in the cost function (float).
+        debug: Enable debugging with detailed statistics (bool).
+        visual_debug: Enable visual debugging with plots (bool).
 
-        # Order all candidates by score
-        ordered = sorted(all_candidates, key=lambda tup: tup[1], reverse=True)
-        # Select k best
-        sequences_ordered = ordered[:beam_size]
-        sequences = sequences_ordered
+    Returns:
+        List of segment boundaries (start, end) in frames.
+    """
 
-    # This can happen with very short input wavs
-    if len(sequences_ordered[0][0]) <= 1:
-        segments = [(0, fbank_feat_len)]
-    else:
-        best_cuts = sequences_ordered[0]
-        segments = list(zip(best_cuts[0][:-1], best_cuts[0][1:]))
-    
-    # This prevents the overlapping of segments
-    # segments = [(x[0]+1, x[1]) if x[0]!=0 else (x[0], x[1]) for x in segments]
-    
-    return segments
-
-def main():
-    # Allow this tool to be used as a stand alone program. 
-    # Also useful for debugging.
-    parser = argparse.ArgumentParser(description='This tool does a simple endpointing beam search over a long audio'
-                                                 ' file, to cut it into smaller pieces for ASR processing.')
-
-    parser.add_argument('-a', '--average-segment-length', help='Average segment length in seconds.',
-                                     type=float, default=60.0)
-
-    # Positional argument, without (- and --)
-    parser.add_argument('filename', help='The path of the mediafile', type=str)
-
-    args = parser.parse_args()
-    filenameS = args.filename.rpartition('.')[0] # Filename without file extension
-    filename = args.filename
-
-    filenameS_hash = hex(abs(hash(filenameS)))[2:]
-
-    tmp_file = f'tmp/{filenameS_hash}.wav'
-
-    # Use FFmpeg to convert the input media file to 16 kHz wav mono
-    (
-        ffmpeg
-            .input(filename)
-            .output(tmp_file, acodec='pcm_s16le', ac=1, ar='16k')
-            .overwrite_output()
-            .run(quiet=True)
+    # Initialize BeamSearch with the given parameters
+    beam_search = BeamSearch(
+        beam_size=beam_size,
+        ideal_segment_len=int(average_segment_length * 100),  # Convert average segment length from seconds to frames
+        step=step,
+        len_reward_weight=len_reward_weight,
+        energy_weight=energy_weight
     )
 
-    result = segment_wav(tmp_file, debug=False)
+    # Process the audio data and return the segment boundaries
+    return segment_speech_core(data, samplerate, beam_search, max_segment_len_sec, debug, visual_debug)
+
+def print_debug_info(beam_search, segments, samplerate):
+    print("\n--- Debug Info ---\n")
+    
+    # Segment statistics (in seconds)
+    segment_lengths = [(end - start) / 100.0 for start, end in segments]
+    mean_len = np.mean(segment_lengths)
+    var_len = np.var(segment_lengths)
+    min_len = np.min(segment_lengths)
+    max_len = np.max(segment_lengths)
+    
+    print("Segment lengths (seconds):")
+    for i, (start, end) in enumerate(segments):
+        print(f"Segment {i + 1}: Start = {start / 100.0:.2f} sec, End = {end / 100.0:.2f} sec, Length = {(end - start) / 100.0:.2f} sec")
+
+    print("\nSegment length statistics (seconds):")
+    print(f"Mean: {mean_len:.2f}, Variance: {var_len:.2f}, Min: {min_len:.2f}, Max: {max_len:.2f}")
+
+    # Length reward statistics
+    length_rewards = beam_search.length_rewards
+    mean_len_reward = np.mean(length_rewards)
+    var_len_reward = np.var(length_rewards)
+    min_len_reward = np.min(length_rewards)
+    max_len_reward = np.max(length_rewards)
+
+    print("\nLength reward statistics:")
+    print(f"Mean: {mean_len_reward:.2f}, Variance: {var_len_reward:.2f}, Min: {min_len_reward:.2f}, Max: {max_len_reward:.2f}")
+
+    # Energy at cut statistics
+    energy_at_cuts = beam_search.energy_at_cuts
+    mean_energy = np.mean(energy_at_cuts)
+    var_energy = np.var(energy_at_cuts)
+    min_energy = np.min(energy_at_cuts)
+    max_energy = np.max(energy_at_cuts)
+
+    print("\nEnergy at cut statistics:")
+    print(f"Mean: {mean_energy:.2f}, Variance: {var_energy:.2f}, Min: {min_energy:.2f}, Max: {max_energy:.2f}")
+
+# used by main to read from a wav_filename (used for debug)
+def segment_wav(wav_filename, beam_search, max_segment_len_sec=180, debug=False, visual_debug=False):
+    samplerate, data = wavfile.read(wav_filename, mmap=False)
+    return segment_speech_core(data, samplerate, beam_search, max_segment_len_sec, debug, visual_debug)
+
+def main():
+    parser = argparse.ArgumentParser(description='Endpointing tool to cut long audio into smaller pieces for ASR processing.')
+    parser.add_argument('-a', '--average-segment-length', help='Average segment length in seconds.', type=float, default=60.0)
+    parser.add_argument('-m', '--max-segment-length', help='Maximum segment length in seconds.', type=float, default=180.0)
+    parser.add_argument('-b', '--beam-size', help='Beam size for beam search.', type=int, default=10)
+    parser.add_argument('-s', '--step', help='Step size for beam search.', type=int, default=10)
+    parser.add_argument('-r', '--len-reward', help='Length reward factor for beam search.', type=float, default=40)
+    parser.add_argument('-lw', '--len-reward-weight', help='Weight for the length reward component.', type=float, default=12.0)
+    parser.add_argument('-ew', '--energy-weight', help='Weight for the energy at cut component.', type=float, default=1.0)
+    parser.add_argument('--debug', help='Enable debugging with detailed statistics.', action='store_true')
+    parser.add_argument('--visual-debug', help='Enable visual debugging with plots.', action='store_true')
+    parser.add_argument('filename', help='Path of the audio file.', type=str)
+    args = parser.parse_args()
+
+    if args.visual_debug:
+        import matplotlib.pyplot as plt
+
+    filename = args.filename
+    tmp_file = f'tmp/{hex(abs(hash(filename)))[2:]}.wav'
+
+    # Convert the input file to 16 kHz mono wav using FFmpeg
+    (
+        ffmpeg
+        .input(filename)
+        .output(tmp_file, acodec='pcm_s16le', ac=1, ar='16k')
+        .overwrite_output()
+        .run(quiet=True)
+    )
+
+    beam_search = BeamSearch(
+        beam_size=args.beam_size,
+        ideal_segment_len=int(args.average_segment_length * 100),  # Convert seconds to frames (100 frames per second)
+        step=args.step,
+        len_reward_weight=args.len_reward_weight,
+        energy_weight=args.energy_weight
+    )
+
+    result = segment_wav(tmp_file, beam_search, max_segment_len_sec=args.max_segment_length, 
+                         debug=args.debug, visual_debug=args.visual_debug)
     print(result)
 
 if __name__ == '__main__':
     main()
+
