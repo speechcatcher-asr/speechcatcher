@@ -20,8 +20,8 @@ def to_word_list(tokenizer, paragraphs, remove_punctuation=False):
 
     return dict(zip(paragraph_ids, paragraph_tokens))
 
-def calculate_word_error_rate(kaldi_test_text_file, decoded_text_file, remove_punctuation=False, split_camel_case=True, lower_case=False):
-    tokenizer = SoMaJo(language="de_CMC", split_camel_case=split_camel_case, split_sentences=False)
+def calculate_word_error_rate(kaldi_test_text_file, decoded_text_file, language="de_CMC", remove_punctuation=False, split_camel_case=True, lower_case=False):
+    tokenizer = SoMaJo(language=language, split_camel_case=split_camel_case, split_sentences=False)
 
     test_utterances = {}
     decoded_utterances = {}
@@ -58,13 +58,17 @@ def main():
                         help='Remove punctuation before calculating metrics', action='store_true')
     parser.add_argument('--lower_case', dest='lower_case',
                         help='Lower case all word before calculating metrics', action='store_true')
+    parser.add_argument('--language', dest='language', help='Language for the SoMaJo tokenizer. '
+                                                            'Necessary for WER computation. Default: de_CMC',
+                        default='de_CMC')
+
 
     parser.add_argument('testset_text', type=str, help='The test file containing the test set utterances')
     parser.add_argument('decoded_text', type=str, help='The decoded file containing the decoded utterances')
 
     args = parser.parse_args()
 
-    calculate_word_error_rate(args.testset_text, args.decoded_text, remove_punctuation=args.remove_punctuation, lower_case=args.lower_case)
+    calculate_word_error_rate(args.testset_text, args.decoded_text, language=args.language, remove_punctuation=args.remove_punctuation, lower_case=args.lower_case)
    
 if __name__ == "__main__":
     main()
