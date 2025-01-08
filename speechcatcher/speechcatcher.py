@@ -407,7 +407,7 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
             auxiliary_info[-1]['tokens'].extend(tokens)
             auxiliary_info[-1]['token_timestamps'].extend(timestamps)  
 
-    complete_text = '\n\n'.join(merged_paragraphs)
+    complete_text = '\n\n'.join(merged_paragraphs) + '\n'
     print('\n')
     return complete_text, auxiliary_info
 
@@ -661,7 +661,7 @@ def main():
                              exception_on_pyaudio_overflow=not args.no_exception_on_overflow)
     elif args.inputfile != '':
         # Check if the input file exists
-        if not os.path.isfile(args.inputfile):
+        if (args.inputfile.startswith('/') or args.inputfile.startswith('.')) and not os.path.isfile(args.inputfile):
             print(f"Error: Input file '{args.inputfile}' does not exist or is not a valid file.")
             sys.exit(-1)
         recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes)
