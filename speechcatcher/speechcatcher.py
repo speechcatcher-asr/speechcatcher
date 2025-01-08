@@ -660,8 +660,8 @@ def main():
                              save_debug_wav=args.save_debug_wav,
                              exception_on_pyaudio_overflow=not args.no_exception_on_overflow)
     elif args.inputfile != '':
-        # Check if the input file exists
-        if (args.inputfile.startswith('/') or args.inputfile.startswith('.')) and not os.path.isfile(args.inputfile):
+        # Check if the input file exists, while also allowing http(s) URLs as input.
+        if not (args.inputfile.startswith('http://') or args.inputfile.startswith('https://')) and not os.path.isfile(args.inputfile):
             print(f"Error: Input file '{args.inputfile}' does not exist or is not a valid file.")
             sys.exit(-1)
         recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes)
