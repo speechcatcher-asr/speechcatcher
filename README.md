@@ -24,6 +24,10 @@ on Linux (Ubuntu 24.04):
     
     sudo apt-get install portaudio19-dev python3.12-dev ffmpeg libhdf5-dev git git-lfs build-essential
 
+on Linux (Fedora):
+  
+    sudo dnf install portaudio-devel python3 python3-pip python3-devel ffmpeg hdf5-devel git git-lfs gcc gcc-c++ make automake autoconf
+
 For a system-wide and global installation, simply do:
 
     pip3 install git+https://github.com/speechcatcher-asr/speechcatcher
