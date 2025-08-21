@@ -96,7 +96,7 @@ class SpeechRecognitionSession:
                 "-ac", "1",  # 1 channel
                 "-ar", str(self.vosk_sample_rate),  # Sample rate from Vosk config
                 "-i", "pipe:0",  # Input is piped
-                "-f", "wav", "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",  # Output is 16kHz mono
+                "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",  # Output is 16kHz mono
                 "pipe:1"  # Output is piped
             ]
         else:
@@ -104,7 +104,7 @@ class SpeechRecognitionSession:
             command = [
                 "ffmpeg", "-loglevel", "debug" if debug else "info",
                 "-f", self.audio_format, "-i", "pipe:0",  # Let FFmpeg infer the format
-                "-f", "wav", "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",  # Output is 16kHz mono
+                "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",  # Output is 16kHz mono
                 "pipe:1"
             ]
 
