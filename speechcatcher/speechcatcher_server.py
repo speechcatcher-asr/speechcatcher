@@ -24,7 +24,7 @@
 #    speechcatcher_server --vosk-output-format --port 2700
 #    (Listens on localhost:2700)
 # 
-# Author: Dr. Benjamin Milde, 2024
+# Author: Dr. Benjamin Milde, 2024, 2025
 
 import asyncio
 import websockets
@@ -131,7 +131,7 @@ class SpeechRecognitionSession:
                 print("FFmpeg stderr:", error.decode().strip())
 
     def decode_audio(self, audio_chunk):
-        # Do not use ffmpeg with vosk if the audio chunks are already 16kHz PCM. 
+        # Do not use ffmpeg with vosk if the audio chunks are already 16kHz PCM.
         if self.vosk_output_format and self.vosk_sample_rate == 16000:
             return np.frombuffer(audio_chunk, dtype='int16')
 
@@ -177,10 +177,10 @@ class SpeechRecognitionSession:
         if save_debug_wav:
             self.blocks.append(data)
             if len(self.blocks) > self.write_debug_wav:
-                samplerate = 16000    
+                samplerate = 16000
                 print("\nSaving debug output...")
                 wavfile.write(debug_wav_path, samplerate, np.concatenate(self.blocks, axis=None))
-                
+
                 self.write_debug_wav += 10
 
         data = data.astype(np.float16) / 32767.0  # Normalize
@@ -285,15 +285,15 @@ class Speech2TextPool:
         with self.lock:
             self.pool.put(model)
 
-async def recognize_ws(websocket, path, model_pool, audio_format, finalize_update_iters, max_partial_iters, vosk_output_format):
+async def recognize_ws(connection, model_pool, audio_format, finalize_update_iters, max_partial_iters, vosk_output_format):
     '''
         Recognize speech from audio data sent over a websocket connection.
     '''
     print("Client connected")
     speech2text = model_pool.acquire()
     if speech2text is None:
-        await websocket.send("Server busy, please try again later.")
-        await websocket.close()
+        await connection.send("Server busy, please try again later.")
+        await connection.close()
         return
 
     session = SpeechRecognitionSession(speech2text, audio_format, finalize_update_iters=finalize_update_iters,
@@ -303,15 +303,15 @@ async def recognize_ws(websocket, path, model_pool, audio_format, finalize_updat
         if vosk_output_format:
             last_transcription = {"partial":""}
         # Start asyn communication channel with the websocket
-        async for message in websocket:
+        async for message in connection:
             transcription = session.process_audio_chunk(message)
             if transcription:
                 if vosk_output_format:
                     output = json.dumps(transcription)
                     print(output)
-                    await websocket.send(json.dumps(transcription))
+                    await connection.send(json.dumps(transcription))
                 else:
-                    await websocket.send(str(transcription))
+                    await connection.send(str(transcription))
                 last_transcription = transcription
             else:
                 # In vosk mode, the client always expects an answer for each audio chunk.
@@ -319,15 +319,18 @@ async def recognize_ws(websocket, path, model_pool, audio_format, finalize_updat
                 if vosk_output_format:
                     if "result" in last_transcription:
                         last_transcription = {"partial":""}
-                    await websocket.send(json.dumps(last_transcription))
+                    await connection.send(json.dumps(last_transcription))
     except websockets.exceptions.ConnectionClosed:
         print("Client disconnected")
     finally:
         model_pool.release(speech2text)
 
 async def start_server(host, port, model_pool, audio_format, finalize_update_iters, max_partial_iters, vosk_output_format):
-    server = await websockets.serve(lambda ws, path: recognize_ws(ws, path, model_pool, audio_format,
-                                    finalize_update_iters, max_partial_iters, vosk_output_format), host, port)
+    async def handler(connection):
+        await recognize_ws(connection, model_pool, audio_format,
+                           finalize_update_iters, max_partial_iters, vosk_output_format)
+
+    server = await websockets.serve(handler, host, port)
     await server.wait_closed()
 
 def main():
@@ -360,9 +363,13 @@ def main():
     model_pool = Speech2TextPool(model_tag=tag, device=args.device, beam_size=args.beamsize, cache_dir=args.cache_dir, pool_size=args.pool_size)
 
     print(f'Starting WebSocket server on ws://{args.host}:{args.port}')
-    asyncio.get_event_loop().run_until_complete(start_server(args.host, args.port, model_pool, args.format,
-                                                             args.finalize_update_iters, args.max_partial_iters, args.vosk_output_format))
-    asyncio.get_event_loop().run_forever()
+
+    async def runner():
+        await start_server(args.host, args.port, model_pool, args.format,
+                           args.finalize_update_iters, args.max_partial_iters, args.vosk_output_format)
+
+    asyncio.run(runner())
 
 if __name__ == '__main__':
     main()
+
