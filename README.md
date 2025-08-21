@@ -8,6 +8,10 @@ The current focus is on German ASR. But more models will follow - stay tuned!
 
 ## News
 
+* 8/21/2025. New in version 0.4.2: Python3.13 compatibilty, made speechcatcher-server compatible with the new websockets>=14 API (see also https://websockets.readthedocs.io/en/stable/howto/upgrade.html).
+
+* 1/7/2025. New in version 0.4.1: new and imrpvoed dynamic endpointing, improved error messages.
+
 * 8/19/2024. New in version 0.4.0: Speechcatcher now has a websocket server (speechcatcher_server) for live transcription.
 
 * 6/25/2024. New in version 0.3.2: Speechcatcher is now Python 3.12 compatible! Under certain conditions some input files would produce an error on the last segment, this now fixed in this version.
