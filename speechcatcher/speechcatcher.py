@@ -70,13 +70,24 @@ def ensure_dir(f):
 
 # Load the espnet model with the given tag
 def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet'):
+    """
+    `tag` can be:
+      - a Hugging Face repo id like "speechcatcher/..."
+      - a direct https URL to a packed ESPnet model archive
+      - a local path to a packed archive
+    """
     espnet_model_downloader = ModelDownloader(cache_dir)
-    return Speech2TextStreaming(**espnet_model_downloader.download_and_unpack(tag, quiet=quiet),
-                                device=device, token_type=None, bpemodel=None,
-                                maxlenratio=0.0, minlenratio=0.0, beam_size=beam_size, ctc_weight=0.3, lm_weight=0.0,
-                                penalty=0.0, nbest=1, disable_repetition_detection=True,
-                                decoder_text_length_limit=0, encoded_feat_length_limit=0
-                                )
+    # IMPORTANT: just pass tag verbatim; ModelDownloader will now do the right thing.
+    info = espnet_model_downloader.download_and_unpack(tag, quiet=quiet)
+
+    return Speech2TextStreaming(
+        **info,
+        device=device, token_type=None, bpemodel=None,
+        maxlenratio=0.0, minlenratio=0.0, beam_size=beam_size,
+        ctc_weight=0.3, lm_weight=0.0, penalty=0.0, nbest=1,
+        disable_repetition_detection=True,
+        decoder_text_length_limit=0, encoded_feat_length_limit=0
+    )
 
 # Convert input file to 16 kHz mono, use stdout to capture the output in-memory
 def convert_inputfile_inmemory(filename):
@@ -638,15 +649,18 @@ def main():
     if args.device.lower() != 'cpu':
         num_processes = 1 
 
-    if args.model not in tags:
-        print(f'Model {args.model} is not a valid model!')
-        print('Options are:', ', '.join(tags.keys()))
-        sys.exit(-1)
+    if not 'http://' in args.model and not 'https://' in args.model:
+        if args.model not in tags:
+            print(f'Model {args.model} is not a valid model!')
+            print('Options are:', ', '.join(tags.keys()))
+            sys.exit(-1)
+        else:
+            tag = tags[args.model]
+            print('Using model: ', tag)
+            if not args.live:
+                print(f'Using {num_processes} processes for decoding. You can change this setting with the -n parameter option.')
     else:
-        tag = tags[args.model]
-        print('Using model: ', tag)
-        if not args.live:
-            print(f'Using {num_processes} processes for decoding. You can change this setting with the -n parameter option.')
+        tag = args.model
 
     quiet = args.quiet or num_processes > 1
     progress = not args.no_progress
