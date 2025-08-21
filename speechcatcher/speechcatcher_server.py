@@ -50,23 +50,31 @@ class SpeechRecognitionSession:
     A SpeechRecognitionSession for a live audio stream.
     '''
     def __init__(self, speech2text, audio_format="webm", finalize_update_iters=7, max_partial_iters=1024, vosk_output_format=False):
+        self.process = None
+        self.reset()
         self.speech2text = speech2text
         self.finalize_update_iters = finalize_update_iters
-        self.n_best_lens = []
-        self.prev_lines = 0
-        self.blocks = []
         self.audio_format = audio_format
         self.vosk_output_format = vosk_output_format
         self.vosk_sample_rate = 16000  # Default to 16kHz PCM, will be overwritten when a vosk config is received.
         self.decoder_sample_rate = 16000 # All Speechcatcher models currently require 16kHz
-        self.process = None
-        self.stdout_queue = Queue()
-        self.stderr_queue = Queue()
-        self.blocks = []
         self.write_debug_wav = 10
         self.max_iters = max_partial_iters
+        self.read_from_ffmpeg_stdout_thread = None
+        self.read_from_ffmpeg_stderr_thread = None
         if not self.vosk_output_format:
             self.start_ffmpeg_process()
+
+    def reset(self):
+        self.n_best_lens = []
+        self.prev_lines = 0
+        self.blocks = []
+        
+        if self.process:
+            self.stop_ffmpeg_process()
+        
+        self.stdout_queue = Queue()
+        self.stderr_queue = Queue()
 
     def parse_vosk_config(self, config_str):
         """
@@ -113,28 +121,65 @@ class SpeechRecognitionSession:
             ]
 
         if self.process:
-            self.process.terminate()  # Ensure we terminate the previous process if it exists
+            self.stop_ffmpeg_process()  # Ensure we terminate the previous process if it exists
 
         self.process = subprocess.Popen(
             command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, bufsize=10**7  # 10MB buffer
         )
-        Thread(target=self.read_from_ffmpeg_stdout, daemon=True).start()
-        Thread(target=self.read_from_ffmpeg_stderr, daemon=True).start()
 
+        self.read_from_ffmpeg_stdout_thread = Thread(target=self.read_from_ffmpeg_stdout, daemon=True)
+        self.read_from_ffmpeg_stdout_thread.start()
+        
+        self.read_from_ffmpeg_stderr_thread = Thread(target=self.read_from_ffmpeg_stderr, daemon=True)
+        self.read_from_ffmpeg_stderr_thread.start()
+
+    def stop_ffmpeg_process(self):
+        if self.process:
+            self.process.terminate()
+            try:
+                self.process.wait(timeout=1.0)
+            except Exception:
+                pass
+            self.process = None
 
     def read_from_ffmpeg_stdout(self):
-        while True:
-            output = self.process.stdout.read(4096)
-            if output:
-                self.stdout_queue.put(output)
+        """
+        Drain FFmpeg stdout into self.stdout_queue until EOF, then return.
+        """
+        try:
+            stream = self.process.stdout
+            # read(...) returns b'' at EOF; iter(..., b'') stops the loop
+            for chunk in iter(lambda: stream.read(4096), b''):
+                if chunk:  # normal case while running
+                    self.stdout_queue.put(chunk)
+        except Exception:
+            # Process is shutting down or pipe closed - safe to exit the thread
+            pass
+        print('read_from_ffmpeg_stdout Thread terminated.')
 
     def read_from_ffmpeg_stderr(self):
-        while True:
-            error = self.process.stderr.readline()
-            if error:
-                print("FFmpeg stderr:", error.decode().strip())
+        """
+        Read FFmpeg stderr line-by-line until EOF.
+        """
+        try:
+            stream = self.process.stderr
+            for line in iter(stream.readline, b''):
+                if not line:
+                    break
+                # Option A: print (decode safely)
+                text = line.decode(errors="replace").rstrip()
+                if text:
+                    print("FFmpeg stderr:", text)
+        except Exception:
+            # Process is shutting down or pipe closed - safe to exit the thread
+            pass
+        print('read_from_ffmpeg_stderr Thread terminated.')
 
     def decode_audio(self, audio_chunk):
+        # if already an int16 numpy array, return right away
+        if isinstance(audio_chunk, np.ndarray) and audio_chunk.dtype == np.int16:
+            return audio_chunk
+
         # Do not use ffmpeg with vosk if the audio chunks are already 16kHz PCM.
         if self.vosk_output_format and self.vosk_sample_rate == self.decoder_sample_rate:
             return np.frombuffer(audio_chunk, dtype='int16')
@@ -158,12 +203,22 @@ class SpeechRecognitionSession:
     # This function processes one chunk of incoming audio
     def process_audio_chunk(self, audio_chunk, is_final=False, save_debug_wav=False, debug=False):
         print("Incoming audio data len:", len(audio_chunk), type(audio_chunk))
+        client_forced_finalize = False
 
         if isinstance(audio_chunk, str):
             print("Received configuration message:", audio_chunk)
             if self.vosk_output_format:
-                self.parse_vosk_config(audio_chunk)
-                return self.format_vosk_partial("")  # Return empty result for config message
+                if audio_chunk == '{"eof" : 1}':
+                    print('Client sent eof message, finalizing... ')
+                    client_forced_finalize = True
+                    audio_chunk = np.zeros(1000, dtype=np.int16)
+                elif audio_chunk == '{"reset" : 1}':
+                    print('Client sent reset message.')
+                    client_forced_finalize = True
+                    audio_chunk = np.zeros(1000, dtype=np.int16)
+                else:
+                    self.parse_vosk_config(audio_chunk)
+                    return self.format_vosk_partial("")  # Return empty result for config message
             else:
                 return ""
 
@@ -208,10 +263,16 @@ class SpeechRecognitionSession:
             else:
                 finalize_iteration = False
 
+        if client_forced_finalize:
+            finalize_iteration = True
+
         results = self.speech2text(speech=data, is_final=finalize_iteration)
 
         if debug:
             print("Results:", results)
+
+        if client_forced_finalize:
+            self.reset()
 
         if results is not None and len(results) > 0:
             nbests0 = results[0][0]
