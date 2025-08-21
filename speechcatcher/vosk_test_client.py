@@ -62,7 +62,7 @@ async def run_test(uri, input_file, sample_rate, channels, bit_depth):
 def main():
     parser = argparse.ArgumentParser(description="Speechcatcher's Vosk-API WebSocket ASR test client with audio conversion")
     parser.add_argument('input_file', help='Path to the input audio file')
-    parser.add_argument('--port', type=int, default=8765, help='WebSocket server port (default: 8765)')
+    parser.add_argument('--port', type=int, default=2700, help='WebSocket server port (default: 2700)')
     parser.add_argument('--host', default='localhost', help='WebSocket server host (default: localhost)')
     parser.add_argument('--sample-rate', type=int, default=16000, help='Sample rate in Hz (default: 16000)')
     parser.add_argument('--channels', type=int, default=1, help='Number of audio channels (default: 1)')
