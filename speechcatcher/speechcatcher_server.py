@@ -58,6 +58,7 @@ class SpeechRecognitionSession:
         self.audio_format = audio_format
         self.vosk_output_format = vosk_output_format
         self.vosk_sample_rate = 16000  # Default to 16kHz PCM, will be overwritten when a vosk config is received.
+        self.decoder_sample_rate = 16000 # All Speechcatcher models currently require 16kHz
         self.process = None
         self.stdout_queue = Queue()
         self.stderr_queue = Queue()
@@ -77,7 +78,10 @@ class SpeechRecognitionSession:
                 self.vosk_sample_rate = int(config["config"]["sample_rate"])
                 print(f"Updated Vosk sample rate to {self.vosk_sample_rate} Hz.")
                 # Restart FFmpeg process with the new sample rate if necessary
-                self.start_ffmpeg_process(vosk_mode=True)
+                if self.vosk_sample_rate == self.decoder_sample_rate:
+                    print(f'Not starting an FFmpeg process since input stream sample rate is already {self.decoder_sample_rate}Hz.')
+                else:
+                    self.start_ffmpeg_process(vosk_mode=True)
         except json.JSONDecodeError as e:
             print(f"Error parsing Vosk config: {e}")
 
@@ -96,7 +100,7 @@ class SpeechRecognitionSession:
                 "-ac", "1",  # 1 channel
                 "-ar", str(self.vosk_sample_rate),  # Sample rate from Vosk config
                 "-i", "pipe:0",  # Input is piped
-                "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",  # Output is 16kHz mono
+                "-f", "wav", "-acodec", "pcm_s16le", "-ac", "1", "-ar", str(self.decoder_sample_rate),  # Output is 16kHz mono
                 "pipe:1"  # Output is piped
             ]
         else:
@@ -104,7 +108,7 @@ class SpeechRecognitionSession:
             command = [
                 "ffmpeg", "-loglevel", "debug" if debug else "info",
                 "-f", self.audio_format, "-i", "pipe:0",  # Let FFmpeg infer the format
-                "-acodec", "pcm_s16le", "-ac", "1", "-ar", "16000",  # Output is 16kHz mono
+                "-f", "wav", "-acodec", "pcm_s16le", "-ac", "1", "-ar", str(self.decoder_sample_rate),  # Output is 16kHz mono
                 "pipe:1"
             ]
 
@@ -132,7 +136,7 @@ class SpeechRecognitionSession:
 
     def decode_audio(self, audio_chunk):
         # Do not use ffmpeg with vosk if the audio chunks are already 16kHz PCM.
-        if self.vosk_output_format and self.vosk_sample_rate == 16000:
+        if self.vosk_output_format and self.vosk_sample_rate == self.decoder_sample_rate:
             return np.frombuffer(audio_chunk, dtype='int16')
 
         if self.process is None:
