@@ -16,7 +16,7 @@ The current focus is on German ASR. But more models will follow - stay tuned!
 
 * 6/25/2024. New in version 0.3.2: Speechcatcher is now Python 3.12 compatible! Under certain conditions some input files would produce an error on the last segment, this now fixed in this version.
 
-* 12/15/2023. New in version 0.3.1: Support for timestamps on the token level. Speechcatcher is now using [espnet_streaming_decoder](https://github.com/speechcatcher-asr/espnet_streaming_decoder) instead of [espnet](https://github.com/espnet/espnet), to make dependencies leaner and to enable token timestamps with streaming models. Speechcatcher does not require a full Espnet installation anymore. It also uses a forked version of [espnet_model_zoo](https://github.com/speechcatcher-asr/espnet_model_zoo), so that model downloads are only checked online if a local cache copy isn't available.
+* 12/15/2023. New in version 0.3.1: Support for timestamps on the token level. Speechcatcher is now using its own [espnet_streaming_decoder](https://github.com/speechcatcher-asr/espnet_streaming_decoder) instead of using [espnet](https://github.com/espnet/espnet) directly, to make dependencies leaner and to enable token timestamps with streaming models. Speechcatcher does not require a full Espnet installation anymore. It also uses a forked version of [espnet_model_zoo](https://github.com/speechcatcher-asr/espnet_model_zoo), so that model downloads are only checked online if a local cache copy isn't available.
 
 ## Installation instructions:
 
