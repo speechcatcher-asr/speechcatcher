@@ -1,0 +1,285 @@
+\begin{thebibliography}{10}
+
+\bibitem{graves06}
+Alex Graves, Santiago Fern{\'a}ndez, Faustino Gomez, and J{\"u}rgen
+  Schmidhuber,
+\newblock ``Connectionist temporal classification: labelling unsegmented
+  sequence data with recurrent neural networks,''
+\newblock in {\em Proc. of 23rd International Conference on Machine Learning},
+  2006, pp. 369--376.
+
+\bibitem{miao15}
+Yajie Miao, Mohammad Gowayyed, and Florian Metze,
+\newblock ``{EESEN}: End-to-end speech recognition using deep {RNN} models and
+  {WFST}-based decoding,''
+\newblock in {\em Proc. of ASRU Workshop}, 2015, pp. 167--174.
+
+\bibitem{amodei16}
+Dario Amodei et~al.,
+\newblock ``Deep {Speech} 2: End-to-end speech recognition in {English} and
+  {Mandarin},''
+\newblock in {\em Proc. of 33rd International Conference on Machine Learning},
+  2016, vol.~48, pp. 173--182.
+
+\bibitem{chorowski15}
+Jan~K. Chorowski, Dzmitry Bahdanau, Dmitriy Serdyuk, Kyunghyun Cho, and Yoshua
+  Bengio,
+\newblock ``Attention-based models for speech recognition,''
+\newblock in {\em Proc. of NIPS}, 2015, pp. 577--585.
+
+\bibitem{chan16}
+William Chan, Navdeep Jaitly, Quoc Le, and Oriol Vinyals,
+\newblock ``Listen, attend and spell: A neural network for large vocabulary
+  conversational speech recognition,''
+\newblock in {\em Proc. of ICASSP}, 2016, pp. 4960--4964.
+
+\bibitem{chiu18}
+Chung-Cheng Chiu, Tara~N. Sainath, Yonghui Wu, Rohit Prabhavalkar, Patrick
+  Nguyen, Zhifeng Chen, Anjuli Kannan, Ron~J. Weiss, Kanishka Rao, Ekaterina
+  Gonina, et~al.,
+\newblock ``State-of-the-art speech recognition with sequence-to-sequence
+  models,''
+\newblock in {\em Proc. of ICASSP}, 2018, pp. 4774--4778.
+
+\bibitem{watanabe17}
+Shinji Watanabe, Takaaki Hori, Suyoun Kim, John~R. Hershey, and Tomoki Hayashi,
+\newblock ``Hybrid {CTC}/attention architecture for end-to-end speech
+  recognition,''
+\newblock {\em Journal of Selected Topics in Signal Processing}, vol. 11, no.
+  8, pp. 1240--1253, 2017.
+
+\bibitem{graves13rnnt}
+Alex Graves, Abdel-{Rahman} Mohamed, and Geoffrey Hinton,
+\newblock ``Speech recognition with deep recurrent neural networks,''
+\newblock in {\em Proc. of ICASSP}, 2013, pp. 6645--6649.
+
+\bibitem{rao17}
+Kanishka Rao, Ha{\c{s}}im Sak, and Rohit Prabhavalkar,
+\newblock ``Exploring architectures, data and units for streaming end-to-end
+  speech recognition with {RNN}-transducer,''
+\newblock in {\em Proc. of ASRU Workshop}, 2017, pp. 193--199.
+
+\bibitem{vaswani17}
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones,
+  Aidan~N. Gomez, {\L}ukasz Kaiser, and Illia Polosukhin,
+\newblock ``Attention is all you need,''
+\newblock in {\em Proc. of NeurIPS}, 2017, pp. 5998--6008.
+
+\bibitem{sperber18}
+Matthias Sperber, Jan Niehues, Graham Neubig, Sebastian St{\"u}ker, and Alex
+  Waibel,
+\newblock ``Self-attentional acoustic models,''
+\newblock in {\em Proc. of Interspeech}, 2018, pp. 3723--3727.
+
+\bibitem{salazar19}
+Julian Salazar, Katrin Kirchhoff, and Zhiheng Huang,
+\newblock ``Self-attention networks for connectionist temporal classification
+  in speech recognition,''
+\newblock in {\em Proc. of ICASSP}, 2019, pp. 7115--7119.
+
+\bibitem{zhao19}
+Yuanyuan Zhao, Jie Li, Xiaorui Wang, and Yan Li,
+\newblock ``The {SpeechTransformer} for large-scale {Mandarin} {Chinese} speech
+  recognition,''
+\newblock in {\em Proc. of ICASSP}, 2019, pp. 7095--7099.
+
+\bibitem{karita19}
+Shigeki Karita, Nanxin Chen, Tomoki Hayashi, Takaaki Hori, Hirofumi Inaguma,
+  Ziyan Jiang, Masao Someki, Nelson Enrique~Yalta Soplin, Ryuichi Yamamoto,
+  Xiaofei Wang, et~al.,
+\newblock ``A comparative study on transformer vs {RNN} in speech
+  applications,''
+\newblock in {\em Proc. of ASRU Workshop}, 2019, pp. 449--456.
+
+\bibitem{schuster97}
+Mike Schuster and Kuldip~K. Paliwal,
+\newblock ``Bidirectional recurrent neural networks,''
+\newblock {\em Transactions on Signal Processing}, vol. 45, no. 11, pp.
+  2673--2681, 1997.
+
+\bibitem{moritz20}
+Niko Moritz, Takaaki Hori, and Jonathan~Le Roux,
+\newblock ``Streaming automatic speech recognition with the transformer
+  model,''
+\newblock in {\em Proc. of ICASSP}, 2020, pp. 6074--6078.
+
+\bibitem{povey18}
+Daniel Povey, Hossein Hadian, Pegah Ghahremani, Ke~Li, and Sanjeev Khudanpur,
+\newblock ``A time-restricted self-attention layer for {ASR},''
+\newblock in {\em Proc. of ICASSP}, 2018, pp. 5874--5878.
+
+\bibitem{dong19}
+Linhao Dong, Feng Wang, and Bo~Xu,
+\newblock ``Self-attention aligner: A latency-control end-to-end model for
+  {ASR} using self-attention network and chunk-hopping,''
+\newblock in {\em Proc. of ICASSP}, 2019, pp. 5656--5660.
+
+\bibitem{miao2020}
+Haoran Miao, Gaofeng Cheng, Zhang Pengyuan, and Yonghong Yan,
+\newblock ``Transformer online {CTC}/attention end-to-end speech recognition
+  architecture,''
+\newblock in {\em Proc. of ICASSP}, 2020, pp. 6084--6088.
+
+\bibitem{dai19}
+Zihang Dai, Zhilin Yang, Yiming Yang, William~W Cohen, Jaime Carbonell, Quoc~V
+  Le, and Ruslan Salakhutdinov,
+\newblock ``Transformer-{XL}: Attentive language models beyond a fixed-length
+  context,''
+\newblock {\em arXiv preprint arXiv:1901.02860}, 2019.
+
+\bibitem{tsunoo19}
+Emiru Tsunoo, Yosuke Kashiwagi, Toshiyuki Kumakura, and Shinji Watanabe,
+\newblock ``Transformer {ASR} with contextual block processing,''
+\newblock in {\em Proc. of ASRU Workshop}, 2019, pp. 427--433.
+
+\bibitem{chiu2017monotonic}
+Chung-Cheng Chiu and Colin Raffel,
+\newblock ``Monotonic chunkwise attention,''
+\newblock {\em arXiv preprint arXiv:1712.05382}, 2017.
+
+\bibitem{fan19}
+Ruchao Fan, Pan Zhou, Wei Chen, Jia Jia, and Gang Liu,
+\newblock ``An online attention-based model for speech recognition,''
+\newblock {\em Proc. of Interspeech}, pp. 4390--4394, 2019.
+
+\bibitem{kim19}
+Kwangyoun Kim, Kyungmin Lee, Dhananjaya Gowda, Junmo Park, Sungsoo Kim, Sichen
+  Jin, Young-Yoon Lee, Jinsu Yeo, Daehyun Kim, Seokyeong Jung, et~al.,
+\newblock ``Attention based on-device streaming speech recognition with large
+  speech corpus,''
+\newblock in {\em Proc. of ASRU Workshop}, 2019, pp. 956--963.
+
+\bibitem{tsunoo2019towards}
+Emiru Tsunoo, Yosuke Kashiwagi, Toshiyuki Kumakura, and Shinji Watanabe,
+\newblock ``Towards online end-to-end transformer automatic speech
+  recognition,''
+\newblock {\em arXiv preprint arXiv:1910.11871}, 2019.
+
+\bibitem{inaguma20}
+Hirofumi Inaguma, Yashesh Gaur, Liang Lu, Jinyu Li, and Yifan Gong,
+\newblock ``Minimum latency training strategies for streaming
+  sequence-to-sequence {ASR},''
+\newblock in {\em Proc. of ICASSP}, 2020, pp. 6064--6068.
+
+\bibitem{li2014}
+Jinyu Li, Rui Zhao, Jui-Ting Huang, and Yifan Gong,
+\newblock ``Learning small-size {DNN} with output-distribution-based
+  criteria,''
+\newblock in {\em Proc of 15th Annual Conference of the International Speech
+  Communication Association}, 2014.
+
+\bibitem{hinton2015}
+Geoffrey Hinton, Oriol Vinyals, and Jeff Dean,
+\newblock ``Distilling the knowledge in a neural network,''
+\newblock {\em arXiv preprint arXiv:1503.02531}, 2015.
+
+\bibitem{lu2017}
+Liang Lu, Michelle Guo, and Steve Renals,
+\newblock ``Knowledge distillation for small-footprint highway networks,''
+\newblock in {\em Proc. of ICASSP}, 2017, pp. 4820--4824.
+
+\bibitem{hkust06}
+Yi~Liu, Pascale Fung, Yongsheng Yang, Christopher Cieri, Shudong Huang, and
+  David Graff,
+\newblock ``{HKUST/MTS}: A very large scale {Mandarin} telephone speech
+  corpus,''
+\newblock in {\em International Symposium on Chinese Spoken Language
+  Processing}. Springer, 2006, pp. 724--735.
+
+\bibitem{aishell17}
+Hui Bu, Jiayu Du, Xingyu Na, Bengu Wu, and Hao Zheng,
+\newblock ``{AIShell-1}: An open-source {Mandarin} speech corpus and a speech
+  recognition baseline,''
+\newblock in {\em Oriental COCOSDA}, 2017, pp. 1--5.
+
+\bibitem{panayotov15}
+Vassil Panayotov, Guoguo Chen, Daniel Povey, and Sanjeev Khudanpur,
+\newblock ``{LibriSpeech}: an {ASR} corpus based on public domain audio
+  books,''
+\newblock in {\em Proc. of ICASSP}, 2015, pp. 5206--5210.
+
+\bibitem{csj}
+Kikuo Maekawa, Hanae Koiso, Sadaoki Furui, and Hitoshi Isahara,
+\newblock ``Spontaneous speech corpus of {Japanese},''
+\newblock in {\em Proc. of the International Conference on Language Resources
+  and Evaluation (LREC)}, 2000, pp. 947--9520.
+
+\bibitem{tian20}
+Zhengkun Tian, Jiangyan Yi, Ye~Bai, Jianhua Tao, Shuai Zhang, and Zhengqi Wen,
+\newblock ``Synchronous transformers for end-to-end speech recognition,''
+\newblock in {\em Proc. of ICASSP}, 2020, pp. 7884--7888.
+
+\bibitem{jaitly2016}
+Navdeep Jaitly, Quoc~V Le, Oriol Vinyals, Ilya Sutskever, David Sussillo, and
+  Samy Bengio,
+\newblock ``An online sequence-to-sequence model using partial conditioning,''
+\newblock in {\em Proc. of NIPS}, 2016, pp. 5067--5075.
+
+\bibitem{child19}
+Rewon Child, Scott Gray, Alec Radford, and Ilya Sutskever,
+\newblock ``Generating long sequences with sparse transformers,''
+\newblock {\em arXiv preprint arXiv:1904.10509}, 2019.
+
+\bibitem{seki19}
+Hiroshi Seki, Takaaki Hori, Shinji Watanabe, Niko Moritz, and Jonathan Le~Roux,
+\newblock ``Vectorized beam search for ctc-attention-based speech
+  recognition,''
+\newblock in {\em Proc. of Interspeech}, 2019, pp. 3825--3829.
+
+\bibitem{dong20}
+Linhao Dong and Bo~Xu,
+\newblock ``{CIF}: Continuous integrate-and-fire fore end-to-end speech
+  recognition,''
+\newblock in {\em Proc. of ICASSP}, 2020, pp. 6079--6083.
+
+\bibitem{tian19}
+Zhengkun Tian, Jiangyan Yi, Jianhua Tao, Ye~Bai, and Zhengqi Wen,
+\newblock ``Self-attention transducers for end-to-end speech recognition,''
+\newblock in {\em Proc. of Interspeech}, 2019, pp. 4395--4399.
+
+\bibitem{watanabeespnet}
+Shinji Watanabe, Takaaki Hori, Shigeki Karita, Tomoki Hayashi, Jiro Nishitoba,
+  Yuya Unno, Nelson Enrique~Yalta Soplin, Jahn Heymann, Matthew Wiesner, Nanxin
+  Chen, et~al.,
+\newblock ``{ESPnet}: End-to-end speech processing toolkit,''
+\newblock in {\em Proc. of Interspeech}, 2019, pp. 2207--2211.
+
+\bibitem{park19}
+Daniel~S Park, William Chan, Yu~Zhang, Chung-Cheng Chiu, Barret Zoph, Ekin~D
+  Cubuk, and Quoc~V Le,
+\newblock ``{SpecAugment}: A simple data augmentation method for automatic
+  speech recognition,''
+\newblock in {\em Proc. of Interspeech}, 2019.
+
+\bibitem{han2020}
+Wei Han, Zhengdong Zhang, Yu~Zhang, Jiahui Yu, Chung-Cheng Chiu, James Qin,
+  Anmol Gulati, Ruoming Pang, and Yonghui Wu,
+\newblock ``Contextnet: Improving convolutional neural networks for automatic
+  speech recognition with global context,''
+\newblock {\em arXiv preprint arXiv:2005.03191}, 2020.
+
+\bibitem{sennrich16}
+Rico Sennrich, Barry Haddow, and Alexandra Birch,
+\newblock ``Neural machine translation of rare words with subword units,''
+\newblock in {\em Proc. of the Association for Computational Linguistics},
+  2016, vol.~1, pp. 1715--1725.
+
+\bibitem{he2019}
+Yanzhang He, Tara~N Sainath, Rohit Prabhavalkar, Ian McGraw, Raziel Alvarez,
+  Ding Zhao, David Rybach, Anjuli Kannan, Yonghui Wu, Ruoming Pang, et~al.,
+\newblock ``Streaming end-to-end speech recognition for mobile devices,''
+\newblock in {\em Proc. of ICASSP}, 2019, pp. 6381--6385.
+
+\bibitem{saon2020}
+George Saon, Zolt{\'a}n T{\"u}ske, and Kartik Audhkhasi,
+\newblock ``Alignment-length synchronous decoding for {RNN} transducer,''
+\newblock in {\em Proc. of ICASSP}, 2020, pp. 7804--7808.
+
+\bibitem{gulati2020}
+Anmol Gulati, James Qin, Chung-Cheng Chiu, Niki Parmar, Yu~Zhang, Jiahui Yu,
+  Wei Han, Shibo Wang, Zhengdong Zhang, Yonghui Wu, et~al.,
+\newblock ``Conformer: Convolution-augmented transformer for speech
+  recognition,''
+\newblock {\em arXiv preprint arXiv:2005.08100}, 2020.
+
+\end{thebibliography}

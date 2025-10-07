@@ -1,0 +1,32 @@
+Metadata-Version: 2.4
+Name: speechcatcher
+Version: 0.4.2
+Summary: Speechcatcher is an open source toolbox for transcribing speech from media files (audio/video).
+Home-page: https://github.com/speechcatcher-asr/speechcatcher
+Author: Benjamin Milde
+Author-email: bmilde@users.noreply.github.com
+Classifier: Programming Language :: Python :: 3
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Operating System :: OS Independent
+License-File: LICENSE
+Requires-Dist: setuptools
+Requires-Dist: torch
+Requires-Dist: torchaudio
+Requires-Dist: ffmpeg-python
+Requires-Dist: espnet_streaming_decoder@ git+https://github.com/speechcatcher-asr/espnet_streaming_decoder
+Requires-Dist: espnet_model_zoo@ git+https://github.com/speechcatcher-asr/espnet_model_zoo
+Requires-Dist: soundfile
+Requires-Dist: six
+Requires-Dist: pyaudio
+Requires-Dist: python_speech_features
+Requires-Dist: scipy
+Requires-Dist: tqdm
+Requires-Dist: somajo
+Requires-Dist: websockets>=14.2
+Dynamic: author
+Dynamic: author-email
+Dynamic: classifier
+Dynamic: home-page
+Dynamic: license-file
+Dynamic: requires-dist
+Dynamic: summary

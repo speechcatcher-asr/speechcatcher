@@ -232,8 +232,20 @@ def load_normalization_stats(stats_path: Path) -> Tuple[np.ndarray, np.ndarray]:
         Tuple of (mean, std) arrays
     """
     stats = np.load(stats_path)
-    mean = stats["mean"]
-    std = stats["std"]
+
+    # Check if stored as mean/std or sum/sum_square/count
+    if "mean" in stats:
+        mean = stats["mean"]
+        std = stats["std"]
+    elif "sum" in stats and "sum_square" in stats and "count" in stats:
+        # Compute mean and std from accumulated statistics
+        count = stats["count"]
+        mean = stats["sum"] / count
+        # std = sqrt(E[X^2] - E[X]^2)
+        mean_square = stats["sum_square"] / count
+        std = np.sqrt(np.maximum(mean_square - mean ** 2, 1e-10))
+    else:
+        raise ValueError(f"Unknown stats format. Keys: {list(stats.keys())}")
 
     logger.info(f"Loaded normalization stats: mean shape {mean.shape}, std shape {std.shape}")
 

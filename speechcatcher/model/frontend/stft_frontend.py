@@ -31,8 +31,8 @@ class STFTFrontend(nn.Module):
     def __init__(
         self,
         n_fft: int = 512,
-        hop_length: int = 128,
-        win_length: int = 512,
+        hop_length: int = 160,  # ESPnet default (matches config)
+        win_length: int = 400,  # ESPnet default (matches config)
         n_mels: int = 80,
         sample_rate: int = 16000,
         f_min: float = 0.0,

@@ -53,13 +53,26 @@ class Speech2TextStreaming:
         self.model.eval()
 
         # Load normalization stats
-        stats_path = self.model_dir / "feats_stats.npz"
-        if stats_path.exists():
-            self.mean, self.std = load_normalization_stats(stats_path)
-        else:
-            logger.warning(f"Normalization stats not found: {stats_path}")
-            self.mean = None
-            self.std = None
+        # Try multiple possible locations
+        stats_paths = [
+            self.model_dir / "feats_stats.npz",
+            self.model_dir.parent.parent / "asr_stats_raw_de_bpe1024/train/feats_stats.npz",  # ESPnet structure
+            self.model_dir / "../stats/train/feats_stats.npz",
+        ]
+
+        self.mean = None
+        self.std = None
+        for stats_path in stats_paths:
+            if stats_path.exists():
+                try:
+                    self.mean, self.std = load_normalization_stats(stats_path)
+                    logger.info(f"Loaded stats from {stats_path}")
+                    break
+                except Exception as e:
+                    logger.warning(f"Failed to load stats from {stats_path}: {e}")
+
+        if self.mean is None:
+            logger.warning(f"Normalization stats not found in any of: {[str(p) for p in stats_paths]}")
 
         # Create beam search
         logger.info(f"Creating beam search with beam_size={beam_size}")
@@ -83,7 +96,7 @@ class Speech2TextStreaming:
         checkpoint_path = self.model_dir / "valid.acc.best.pth"
         if not checkpoint_path.exists():
             # Try alternative checkpoint names
-            for alt_name in ["model.pth", "checkpoint.pth"]:
+            for alt_name in ["valid.acc.ave_6best.pth", "valid.acc.ave.pth", "model.pth", "checkpoint.pth"]:
                 alt_path = self.model_dir / alt_name
                 if alt_path.exists():
                     checkpoint_path = alt_path
