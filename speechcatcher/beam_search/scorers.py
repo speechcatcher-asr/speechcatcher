@@ -191,13 +191,20 @@ class CTCPrefixScorer(ScorerInterface):
                     # Individual states from select_state: (r, s, f_min, f_max)
                     # Stack them along hypothesis dimension
                     logger.debug(f"CTC: Batching {len(states)} individual states")
-                    merged_state = (
-                        torch.stack([s[0] for s in states], dim=2),  # r: (T, 2, n_bh)
-                        torch.stack([s[1] for s in states]),          # s: (n_bh, vocab)
-                        states[0][2],  # f_min (shared across hypotheses)
-                        states[0][3],  # f_max (shared across hypotheses)
-                    )
-                    logger.debug(f"CTC: Batched state r shape: {merged_state[0].shape}")
+
+                    # Check if state is compatible with current input_length
+                    state_T = states[0][0].shape[0]
+                    if state_T != self.impl.input_length:
+                        logger.warning(f"CTC: State time dimension {state_T} != current input_length {self.impl.input_length}, resetting state")
+                        merged_state = None
+                    else:
+                        merged_state = (
+                            torch.stack([s[0] for s in states], dim=2),  # r: (T, 2, n_bh)
+                            torch.stack([s[1] for s in states]),          # s: (n_bh, vocab)
+                            states[0][2],  # f_min (shared across hypotheses)
+                            states[0][3],  # f_max (shared across hypotheses)
+                        )
+                        logger.debug(f"CTC: Batched state r shape: {merged_state[0].shape}")
                 else:
                     # Already batched (5 elements) - shouldn't happen with proper select_state
                     logger.warning(f"CTC: Got batched state with {len(states[0])} elements, expected 4")
@@ -275,13 +282,20 @@ class CTCPrefixScorer(ScorerInterface):
                 if len(states[0]) == 4:
                     # Individual states from select_state: (r, s, f_min, f_max)
                     logger.debug(f"CTC: Batching {len(states)} individual states (partial)")
-                    merged_state = (
-                        torch.stack([s[0] for s in states], dim=2),  # r: (T, 2, n_bh)
-                        torch.stack([s[1] for s in states]),          # s: (n_bh, vocab)
-                        states[0][2],  # f_min
-                        states[0][3],  # f_max
-                    )
-                    logger.debug(f"CTC: Batched state r shape: {merged_state[0].shape}")
+
+                    # Check if state is compatible with current input_length
+                    state_T = states[0][0].shape[0]
+                    if state_T != self.impl.input_length:
+                        logger.warning(f"CTC: State time dimension {state_T} != current input_length {self.impl.input_length}, resetting state")
+                        merged_state = None
+                    else:
+                        merged_state = (
+                            torch.stack([s[0] for s in states], dim=2),  # r: (T, 2, n_bh)
+                            torch.stack([s[1] for s in states]),          # s: (n_bh, vocab)
+                            states[0][2],  # f_min
+                            states[0][3],  # f_max
+                        )
+                        logger.debug(f"CTC: Batched state r shape: {merged_state[0].shape}")
                 else:
                     logger.warning(f"CTC: Got batched state with {len(states[0])} elements in partial scoring")
                     merged_state = states[0]
