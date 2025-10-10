@@ -48,6 +48,8 @@ class BeamSearch:
         eos_id: int = 2,
         max_length: int = 500,
         device: str = "cpu",
+        use_bbd: bool = True,
+        bbd_conservative: bool = True,
     ):
         self.scorers = scorers
         self.weights = weights
@@ -57,6 +59,8 @@ class BeamSearch:
         self.eos_id = eos_id
         self.max_length = max_length
         self.device = device
+        self.use_bbd = use_bbd
+        self.bbd_conservative = bbd_conservative
 
     def batch_score_hypotheses(
         self,
@@ -261,6 +265,8 @@ class BlockwiseSynchronousBeamSearch:
         reliability_threshold: float = 0.8,
         max_length: int = 500,
         device: str = "cpu",
+        use_bbd: bool = True,
+        bbd_conservative: bool = True,
     ):
         self.encoder = encoder
         self.scorers = scorers
@@ -275,8 +281,10 @@ class BlockwiseSynchronousBeamSearch:
         self.reliability_threshold = reliability_threshold
         self.max_length = max_length
         self.device = device
+        self.use_bbd = use_bbd
+        self.bbd_conservative = bbd_conservative
 
-        # Internal beam search for each block
+        # Internal beam search for each block with BBD
         self.beam_search = BeamSearch(
             scorers=scorers,
             weights=weights,
@@ -286,6 +294,8 @@ class BlockwiseSynchronousBeamSearch:
             eos_id=eos_id,
             max_length=max_length,
             device=device,
+            use_bbd=use_bbd,
+            bbd_conservative=bbd_conservative,
         )
 
     def extend_scorers(
@@ -340,6 +350,80 @@ class BlockwiseSynchronousBeamSearch:
 
         return updated_hypotheses
 
+    def compute_reliability_scores(
+        self,
+        hypotheses: List[Hypothesis],
+        scores: torch.Tensor,
+        encoder_out: torch.Tensor,
+        evaluated_hyps: set,
+    ) -> List[float]:
+        """Compute reliability scores for BBD (Block Boundary Detection).
+
+        Based on Equation (12-13) from Tsunoo et al., 2021:
+
+        r(y_{0:i-1}, h_{1:b}) = max over j in [0, i-1]:
+            log p(y_j | y_{0:i-1}, h_{1:b}) + α(y_{0:i-1}, h_{1:b})
+
+        s(y_{0:i}, h_{1:b}) = α(y_{0:i}, h_{1:b}) - r(y_{0:i-1}, h_{1:b})
+
+        If s ≤ 0: hypothesis is unreliable (has <eos> or repetition with higher score)
+
+        Args:
+            hypotheses: Current hypotheses (y_{0:i-1})
+            scores: Scores for next tokens (batch, vocab_size)
+            encoder_out: Encoder output h_{1:b}
+            evaluated_hyps: Set of already evaluated hypothesis sequences (Ω_R)
+
+        Returns:
+            List of reliability scores, one per hypothesis
+        """
+        reliability_scores = []
+
+        for i, hyp in enumerate(hypotheses):
+            # Current hypothesis score: α(y_{0:i-1}, h_{1:b})
+            current_score = hyp.score
+
+            # Find repetitions: tokens that already exist in yseq
+            # Note: <sos> and <eos> are the same token, so <eos> is always a repetition
+            yseq_list = hyp.yseq.tolist()
+
+            # Compute r(y_{0:i-1}, h_{1:b}): highest score among repetitions
+            # For each token j in [0, i-1], compute score of appending y_j
+            max_repetition_score = float('-inf')
+
+            for token_id in set(yseq_list):  # Check each unique token in history
+                # Skip if this repetition was already evaluated
+                hyp_with_rep = tuple(yseq_list + [token_id])
+                if hyp_with_rep in evaluated_hyps:
+                    continue
+
+                # Score of appending this repeated token
+                # log p(y_j | y_{0:i-1}, h_{1:b}) + α(y_{0:i-1}, h_{1:b})
+                repetition_score = current_score + scores[i, token_id].item()
+                max_repetition_score = max(max_repetition_score, repetition_score)
+
+            # If no unevaluated repetitions, assume reliable (no constraint)
+            if max_repetition_score == float('-inf'):
+                reliability_scores.append(float('inf'))
+                continue
+
+            # r(y_{0:i-1}, h_{1:b})
+            r_score = max_repetition_score
+
+            # For the next token, check reliability
+            # We need to check the TOP token that would be appended
+            # s(y_{0:i}, h_{1:b}) = α(y_{0:i}, h_{1:b}) - r(y_{0:i-1}, h_{1:b})
+
+            # Get the best next token score
+            best_next_score = scores[i].max().item()
+            alpha_next = current_score + best_next_score  # α(y_{0:i}, h_{1:b})
+
+            # Reliability score
+            s_score = alpha_next - r_score
+            reliability_scores.append(s_score)
+
+        return reliability_scores
+
     def process_block(
         self,
         features: torch.Tensor,
@@ -392,17 +476,52 @@ class BlockwiseSynchronousBeamSearch:
         )
 
         # Perform beam search if we have encoder output
-        # Run multiple decoding steps for this encoder block (like original)
+        # Run decoding steps with BBD (Block Boundary Detection)
         if encoder_out.size(1) > 0:
-            # Determine max decoding length based on encoder output
-            # Use conservative estimate: ~1 token per 8 encoder frames
-            maxlen = min(max(encoder_out.size(1) // 8, 1), 20)  # Cap at 20 tokens per block
+            # Track hypotheses from previous step for BBD rollback
+            prev_step_hypotheses = new_state.hypotheses
 
-            for step in range(maxlen):
+            # Decode until BBD detects block boundary or max length
+            # Conservative estimate: ~2 tokens per encoder frame (max)
+            # This prevents decoding beyond what CTC can support
+            max_decode_steps = min(encoder_out.size(1) * 2, 100)  # Cap at 100 tokens per block
+
+            for step in range(max_decode_steps):
+                new_state.output_index += 1
+
                 # Score current hypotheses and get new states
                 scores, new_states_dict = self.beam_search.batch_score_hypotheses(
                     new_state.hypotheses, encoder_out
                 )
+
+                # BBD: Check reliability scores BEFORE expanding
+                if self.use_bbd and not is_final:
+                    reliability_scores = self.compute_reliability_scores(
+                        new_state.hypotheses, scores, encoder_out, new_state.evaluated_hyps
+                    )
+
+                    # If ANY hypothesis is unreliable (s ≤ 0), stop and wait for next block
+                    has_unreliable = any(s <= 0 for s in reliability_scores)
+
+                    if has_unreliable:
+                        logger.debug(f"BBD: Unreliable hypothesis detected at step {step}, "
+                                   f"min_reliability={min(reliability_scores):.4f}, stopping block")
+
+                        # Store all current hypotheses in evaluated set (Ω_R)
+                        for hyp in new_state.hypotheses:
+                            new_state.evaluated_hyps.add(tuple(hyp.yseq.tolist()))
+
+                        # Revert to previous step (conservative: i-2, non-conservative: i-1)
+                        if self.bbd_conservative and len(prev_step_hypotheses) > 0:
+                            # Conservative: go back 2 steps
+                            new_state.hypotheses = prev_step_hypotheses
+                            new_state.output_index -= 2
+                        else:
+                            # Non-conservative: go back 1 step (keep current)
+                            new_state.output_index -= 1
+
+                        # Stop decoding this block, wait for more encoder output
+                        break
 
                 # Expand and prune beam
                 new_hypotheses = []
@@ -416,7 +535,7 @@ class BlockwiseSynchronousBeamSearch:
                             scorer = self.scorers[scorer_name]
                             state = new_states_dict[scorer_name][i]
 
-                            # CRITICAL FIX: Call select_state to get correct state for this hyp+token
+                            # Call select_state to get correct state for this hyp+token
                             if hasattr(scorer, 'select_state'):
                                 new_states_for_hyp[scorer_name] = scorer.select_state(state, i, token)
                             else:
@@ -428,11 +547,14 @@ class BlockwiseSynchronousBeamSearch:
                         new_hyp = Hypothesis(
                             yseq=append_token(hyp.yseq, token),
                             score=hyp.score + score,
-                            scores=hyp.scores.copy(),  # TODO: Update per-scorer scores
-                            states=new_states_for_hyp,  # Properly selected states!
+                            scores=hyp.scores.copy(),
+                            states=new_states_for_hyp,
                             xpos=append_position(hyp.xpos, current_encoder_pos),
                         )
                         new_hypotheses.append(new_hyp)
+
+                # Save current hypotheses for potential rollback
+                prev_step_hypotheses = new_state.hypotheses
 
                 # Prune to beam size
                 new_state.hypotheses = top_k_hypotheses(new_hypotheses, self.beam_size)
@@ -440,16 +562,8 @@ class BlockwiseSynchronousBeamSearch:
                 # Check if all hypotheses ended with EOS (only stop if is_final)
                 all_eos = all(h.yseq[-1].item() == self.eos_id for h in new_state.hypotheses)
                 if all_eos and is_final:
+                    logger.debug(f"All hypotheses ended with EOS at step {step}")
                     break
-
-                # Repetition detection: DISABLED for debugging
-                # top_hyp = new_state.hypotheses[0]
-                # if len(top_hyp.yseq) >= 5:
-                #     last_4 = top_hyp.yseq[-4:].tolist()
-                #     if len(set(last_4)) == 1 and last_4[0] != self.sos_id:
-                #         # Same non-SOS token repeated 4 times, stop decoding this block
-                #         logger.warning(f"Repetition detected: token {last_4[0]} repeated 4 times, stopping block")
-                #         break
 
         return new_state
 
@@ -497,6 +611,8 @@ def create_beam_search(
     ctc_weight: float = 0.3,
     decoder_weight: float = 0.7,
     device: str = "cpu",
+    use_bbd: bool = True,
+    bbd_conservative: bool = True,
 ) -> BlockwiseSynchronousBeamSearch:
     """Create BSBS beam search from model.
 
@@ -506,6 +622,8 @@ def create_beam_search(
         ctc_weight: CTC scorer weight
         decoder_weight: Decoder scorer weight
         device: Device to run on
+        use_bbd: Use Block Boundary Detection (BBD) for streaming
+        bbd_conservative: Use conservative BBD (rollback 2 steps vs 1)
 
     Returns:
         BlockwiseSynchronousBeamSearch instance
@@ -534,4 +652,6 @@ def create_beam_search(
         beam_size=beam_size,
         vocab_size=model.vocab_size,
         device=device,
+        use_bbd=use_bbd,
+        bbd_conservative=bbd_conservative,
     )

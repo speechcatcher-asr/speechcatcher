@@ -51,6 +51,8 @@ class BeamState:
         encoder_out_lens: Encoder output lengths
         processed_frames: Number of frames processed so far
         is_final: Whether this is the final block
+        output_index: Current output token index (for BBD)
+        evaluated_hyps: Set of hypothesis sequences already evaluated (Ω_R for BBD)
     """
 
     hypotheses: List[Hypothesis] = field(default_factory=list)
@@ -59,6 +61,8 @@ class BeamState:
     encoder_out_lens: Optional[torch.Tensor] = None
     processed_frames: int = 0
     is_final: bool = False
+    output_index: int = 0
+    evaluated_hyps: set = field(default_factory=set)
 
     def __repr__(self) -> str:
         return (
