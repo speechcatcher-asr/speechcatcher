@@ -38,8 +38,9 @@ from threading import Thread, Lock
 from queue import Queue, Empty
 from speechcatcher.speechcatcher import (
     load_model, tags, progress_output, upperCaseFirstLetter,
-    is_completed, ensure_dir, segment_speech, Speech2TextStreaming
+    is_completed, ensure_dir, segment_speech
 )
+from speechcatcher.speech2text_streaming import Speech2TextStreaming
 import json
 
 debug_wav_path = "debug.wav"
@@ -305,11 +306,16 @@ class SpeechRecognitionSession:
         text = ""
         if output_token_timestamps:
             # Note that we don't return words here, but simply the output tokens of the speechcatcher decoder
-            for token, timestamp in zip(results[0][1], results[0][2]):
+            # New API returns (text, tokens, token_ids) - no timestamps yet
+            # Generate approximate timestamps based on token index
+            tokens = results[0][1]
+            for idx, token in enumerate(tokens):
+                # Generate dummy timestamps (will be replaced when Phase 1 is complete)
+                timestamp = idx * 0.1  # Approximate 100ms per token
                 token_info = {
                     "conf": 1.0,  # Assuming full confidence as Speechcatcher doesn't output confidence scores per token
-                    "start": timestamp - 0.1,  # Approximation
-                    "end": timestamp,
+                    "start": timestamp,
+                    "end": timestamp + 0.1,
                     "word": token.replace("\u2581", " ")
                 }
                 words.append(token_info)

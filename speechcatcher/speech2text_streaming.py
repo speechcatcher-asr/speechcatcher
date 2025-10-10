@@ -17,6 +17,14 @@ from speechcatcher.model.checkpoint_loader import (
 
 logger = logging.getLogger(__name__)
 
+# Try to import sentencepiece for BPE tokenization
+try:
+    import sentencepiece as spm
+    HAS_SENTENCEPIECE = True
+except ImportError:
+    HAS_SENTENCEPIECE = False
+    logger.warning("sentencepiece not installed - text decoding will not be available")
+
 
 class Speech2TextStreaming:
     """Streaming speech recognition interface.
@@ -56,7 +64,8 @@ class Speech2TextStreaming:
         # Try multiple possible locations
         stats_paths = [
             self.model_dir / "feats_stats.npz",
-            self.model_dir.parent.parent / "asr_stats_raw_de_bpe1024/train/feats_stats.npz",  # ESPnet structure
+            self.model_dir.parent / "asr_stats_raw_de_bpe1024/train/feats_stats.npz",  # ESPnet structure (correct path)
+            self.model_dir.parent.parent / "asr_stats_raw_de_bpe1024/train/feats_stats.npz",  # Alternative
             self.model_dir / "../stats/train/feats_stats.npz",
         ]
 
@@ -73,6 +82,38 @@ class Speech2TextStreaming:
 
         if self.mean is None:
             logger.warning(f"Normalization stats not found in any of: {[str(p) for p in stats_paths]}")
+
+        # Load BPE tokenizer if available
+        self.tokenizer = None
+        if HAS_SENTENCEPIECE:
+            bpe_paths = [
+                self.model_dir / "bpe.model",
+                self.model_dir.parent.parent / "data/de_token_list/bpe_unigram1024/bpe.model",
+                self.model_dir / "../data/de_token_list/bpe_unigram1024/bpe.model",
+            ]
+
+            for bpe_path in bpe_paths:
+                if bpe_path.exists():
+                    try:
+                        self.tokenizer = spm.SentencePieceProcessor()
+                        self.tokenizer.Load(str(bpe_path))
+                        logger.info(f"Loaded BPE tokenizer from {bpe_path}")
+                        break
+                    except Exception as e:
+                        logger.warning(f"Failed to load BPE from {bpe_path}: {e}")
+
+            if self.tokenizer is None:
+                logger.warning(f"BPE tokenizer not found in any of: {[str(p) for p in bpe_paths]}")
+        else:
+            logger.warning("sentencepiece not installed - install with: pip install sentencepiece")
+
+        # Frontend parameters for streaming (needed for apply_frontend)
+        if self.model.frontend is not None:
+            self.win_length = self.model.frontend.win_length
+            self.hop_length = self.model.frontend.hop_length
+        else:
+            self.win_length = 400  # Default
+            self.hop_length = 160  # Default
 
         # Create beam search
         logger.info(f"Creating beam search with beam_size={beam_size}")
@@ -93,19 +134,40 @@ class Speech2TextStreaming:
         """Load model from directory."""
         # Build a dummy model first to get the structure
         # Then load weights
-        checkpoint_path = self.model_dir / "valid.acc.best.pth"
-        if not checkpoint_path.exists():
-            # Try alternative checkpoint names
-            for alt_name in ["valid.acc.ave_6best.pth", "valid.acc.ave.pth", "model.pth", "checkpoint.pth"]:
-                alt_path = self.model_dir / alt_name
-                if alt_path.exists():
-                    checkpoint_path = alt_path
-                    break
 
-        if not checkpoint_path.exists():
+        # Try different possible checkpoint locations
+        search_paths = [
+            self.model_dir / "valid.acc.best.pth",
+            self.model_dir / "valid.acc.ave_6best.pth",
+            self.model_dir / "valid.acc.ave.pth",
+            self.model_dir / "model.pth",
+            self.model_dir / "checkpoint.pth",
+        ]
+
+        # Also search in exp/ subdirectories (ESPnet model structure)
+        exp_dirs = list(self.model_dir.glob("exp/*/"))
+        for exp_dir in exp_dirs:
+            search_paths.extend([
+                exp_dir / "valid.acc.best.pth",
+                exp_dir / "valid.acc.ave_6best.pth",
+                exp_dir / "valid.acc.ave.pth",
+                exp_dir / "model.pth",
+                exp_dir / "checkpoint.pth",
+            ])
+
+        checkpoint_path = None
+        for path in search_paths:
+            if path.exists():
+                checkpoint_path = path
+                break
+
+        if checkpoint_path is None:
             raise FileNotFoundError(f"No checkpoint found in {self.model_dir}")
 
-        # Load checkpoint to infer architecture
+        # Load checkpoint using proper name mapping
+        from speechcatcher.model.checkpoint_loader import load_espnet_model_from_directory
+
+        # First, build model architecture by inferring from checkpoint
         checkpoint = torch.load(checkpoint_path, map_location="cpu")
         state_dict = checkpoint.get("model", checkpoint)
 
@@ -138,7 +200,7 @@ class Speech2TextStreaming:
                 encoder_num_blocks=encoder_conf.get("num_blocks", 12),
                 decoder_attention_heads=decoder_conf.get("attention_heads", 4),
                 decoder_num_blocks=decoder_conf.get("num_blocks", 6),
-                use_frontend=False,  # We'll handle features externally
+                use_frontend=True,  # Enable STFT frontend for raw audio
             )
         else:
             # Fallback to default architecture
@@ -148,11 +210,14 @@ class Speech2TextStreaming:
                 encoder_output_size=256,
                 encoder_num_blocks=12,
                 decoder_num_blocks=6,
-                use_frontend=False,
+                use_frontend=True,  # Enable STFT frontend for raw audio
             )
 
-        # Load weights
-        model.load_state_dict(state_dict, strict=False)
+        # Load weights using proper ESPnet -> speechcatcher name mapping
+        from speechcatcher.model.checkpoint_loader import load_espnet_weights
+        model, arch_info = load_espnet_weights(model, checkpoint_path, strict=False)
+
+        logger.info(f"Loaded model with architecture: {arch_info}")
 
         return model
 
@@ -160,6 +225,7 @@ class Speech2TextStreaming:
         """Reset streaming state."""
         self.beam_state = None
         self.processed_frames = 0
+        self.frontend_states = None  # {"waveform_buffer": tensor}
         logger.debug("Streaming state reset")
 
     def normalize_features(self, features: np.ndarray) -> np.ndarray:
@@ -175,6 +241,126 @@ class Speech2TextStreaming:
             features = (features - self.mean) / self.std
         return features
 
+    def apply_frontend(
+        self,
+        speech: torch.Tensor,
+        prev_states: Optional[Dict] = None,
+        is_final: bool = False,
+    ) -> Tuple[Optional[torch.Tensor], Optional[torch.Tensor], Optional[Dict]]:
+        """Apply frontend with waveform buffering and frame trimming.
+
+        Based on espnet_streaming_decoder.asr_inference_streaming.apply_frontend (lines 206-300).
+
+        Args:
+            speech: Raw audio waveform (samples,)
+            prev_states: Previous state dict with "waveform_buffer"
+            is_final: Whether this is the final chunk
+
+        Returns:
+            - feats: Features (1, time, feat_dim) or None if not enough samples
+            - feats_lengths: Feature lengths (1,) or None
+            - next_states: Next state dict or None
+        """
+        import math
+
+        # 1. Concatenate with buffer from previous chunk
+        if prev_states is not None and "waveform_buffer" in prev_states:
+            buf = prev_states["waveform_buffer"]
+            speech = torch.cat([buf, speech], dim=0)
+
+        # 2. Check if we have enough samples for STFT window
+        has_enough_samples = speech.size(0) > self.win_length
+        if not has_enough_samples:
+            if is_final:
+                # Pad with zeros to reach win_length
+                pad = torch.zeros(
+                    self.win_length - speech.size(0),
+                    dtype=speech.dtype,
+                    device=speech.device,
+                )
+                speech = torch.cat([speech, pad], dim=0)
+            else:
+                # Not enough samples yet, buffer and return None
+                next_states = {"waveform_buffer": speech.clone()}
+                return None, None, next_states
+
+        # 3. Determine how much to process vs buffer for next chunk
+        if is_final:
+            # Process everything
+            speech_to_process = speech
+            waveform_buffer = None
+        else:
+            # Calculate number of frames we can produce
+            n_frames = (speech.size(0) - (self.win_length - self.hop_length)) // self.hop_length
+            n_residual = (speech.size(0) - (self.win_length - self.hop_length)) % self.hop_length
+
+            # Process only complete frames, keep residual for next chunk
+            process_length = (self.win_length - self.hop_length) + n_frames * self.hop_length
+            speech_to_process = speech.narrow(0, 0, process_length)
+
+            # Buffer includes overlap for STFT continuity
+            buffer_start = speech.size(0) - (self.win_length - self.hop_length) - n_residual
+            buffer_length = (self.win_length - self.hop_length) + n_residual
+            waveform_buffer = speech.narrow(0, buffer_start, buffer_length).clone()
+
+        # 4. Extract features using frontend
+        # Add batch dimension: (samples,) -> (1, samples)
+        speech_to_process = speech_to_process.unsqueeze(0).to(self.dtype)
+
+        if self.model.frontend is not None:
+            with torch.no_grad():
+                feats, feats_lengths = self.model.frontend(speech_to_process)
+        else:
+            raise RuntimeError("Model has no frontend")
+
+        # 5. Apply normalization
+        if self.mean is not None and self.std is not None:
+            feats_np = feats.squeeze(0).cpu().numpy()  # (time, feat_dim)
+            feats_np = self.normalize_features(feats_np)
+            feats = torch.from_numpy(feats_np).unsqueeze(0).to(self.device).to(self.dtype)
+
+        # 6. Trim overlapping frames at chunk boundaries
+        # Calculate trim amount: half of the frames needed for one STFT window
+        trim_frames = math.ceil(math.ceil(self.win_length / self.hop_length) / 2)
+
+        if is_final:
+            # Final chunk: trim beginning (keep end)
+            if prev_states is None:
+                # First and only chunk - no trimming
+                pass
+            else:
+                # Trim the overlapping frames from the beginning
+                if feats.size(1) > trim_frames:
+                    feats = feats.narrow(1, trim_frames, feats.size(1) - trim_frames)
+        else:
+            # Non-final chunk: trim beginning and/or end
+            if prev_states is None:
+                # First chunk: only trim end
+                if feats.size(1) > trim_frames:
+                    feats = feats.narrow(1, 0, feats.size(1) - trim_frames)
+            else:
+                # Middle chunk: trim both ends
+                total_trim = 2 * trim_frames
+                if feats.size(1) > total_trim:
+                    feats = feats.narrow(1, trim_frames, feats.size(1) - total_trim)
+                else:
+                    # Too short after trimming, skip this chunk
+                    logger.warning(f"Feature chunk too short after trimming: {feats.size(1)} frames")
+                    # Return None but keep buffer for next chunk
+                    next_states = {"waveform_buffer": waveform_buffer} if waveform_buffer is not None else None
+                    return None, None, next_states
+
+        # Update feature lengths after trimming
+        feats_lengths = torch.tensor([feats.size(1)], dtype=torch.long, device=self.device)
+
+        # 7. Prepare next state
+        if is_final:
+            next_states = None
+        else:
+            next_states = {"waveform_buffer": waveform_buffer}
+
+        return feats, feats_lengths, next_states
+
     def __call__(
         self,
         speech: Union[np.ndarray, torch.Tensor],
@@ -183,7 +369,7 @@ class Speech2TextStreaming:
         """Process speech chunk and return recognition results.
 
         Args:
-            speech: Input speech chunk (samples,) or features (time, feat_dim)
+            speech: Input speech chunk - raw audio (samples,) or features (time, feat_dim)
             is_final: Whether this is the final chunk
 
         Returns:
@@ -195,28 +381,34 @@ class Speech2TextStreaming:
 
         speech = speech.to(self.device).to(self.dtype)
 
-        # Ensure 2D (time, feat_dim)
+        # For raw audio (1D), apply frontend with buffering and trimming
         if speech.dim() == 1:
-            # Raw audio - need to extract features
-            # For now, assume features are already extracted
-            raise NotImplementedError("Raw audio input not yet supported")
+            # Apply frontend with proper streaming handling
+            feats, feats_lengths, self.frontend_states = self.apply_frontend(
+                speech, self.frontend_states, is_final=is_final
+            )
 
-        # Normalize features
-        if isinstance(speech, torch.Tensor):
-            speech_np = speech.cpu().numpy()
+            # If not enough samples yet (None returned), return empty results
+            if feats is None:
+                return []
+
+            speech = feats
+            speech_lengths = feats_lengths
+
+        elif speech.dim() == 2:
+            # Pre-computed features - normalize them
+            speech_np = speech.cpu().numpy() if isinstance(speech, torch.Tensor) else speech
+            speech_np = self.normalize_features(speech_np)
+            speech = torch.from_numpy(speech_np).to(self.device).to(self.dtype)
+
+            # Add batch dimension: (time, feat_dim) -> (1, time, feat_dim)
+            speech = speech.unsqueeze(0)
+            speech_lengths = torch.tensor([speech.size(1)], device=self.device)
         else:
-            speech_np = speech
+            # Already batched (3D)
+            speech_lengths = torch.tensor([speech.size(1)], device=self.device)
 
-        speech_np = self.normalize_features(speech_np)
-        speech = torch.from_numpy(speech_np).to(self.device).to(self.dtype)
-
-        # Add batch dimension
-        if speech.dim() == 2:
-            speech = speech.unsqueeze(0)  # (1, time, feat_dim)
-
-        speech_lengths = torch.tensor([speech.size(1)], device=self.device)
-
-        # Process block
+        # Process block with features (not raw audio)
         with torch.no_grad():
             self.beam_state = self.beam_search.process_block(
                 speech, speech_lengths, self.beam_state, is_final
@@ -225,14 +417,24 @@ class Speech2TextStreaming:
         # Convert hypotheses to output format
         results = []
         for hyp in self.beam_state.hypotheses:
-            # Remove SOS token
-            token_ids = hyp.yseq[1:]  # Skip SOS
+            # Remove SOS and EOS tokens (like original: hyp.yseq[1:-1])
+            token_ids = hyp.yseq[1:-1]  # Skip SOS and EOS
 
-            # For now, return token IDs as strings (proper tokenizer needed)
-            tokens = [str(tid) for tid in token_ids]
-            text = " ".join(tokens)
+            # Remove blank tokens (ID=0) - original does: filter(lambda x: x != 0, token_int)
+            token_ids_filtered = [tid for tid in token_ids if tid != 0]
 
-            results.append((text, tokens, token_ids))
+            # Decode to text using BPE tokenizer if available
+            if self.tokenizer is not None:
+                # Decode token IDs to text pieces
+                tokens = [self.tokenizer.IdToPiece(int(tid)) for tid in token_ids_filtered]
+                # Join pieces and replace sentencepiece underscore with space
+                text = "".join(tokens).replace("▁", " ").strip()
+            else:
+                # Fallback: return token IDs as strings
+                tokens = [str(tid) for tid in token_ids_filtered]
+                text = " ".join(tokens)
+
+            results.append((text, tokens, list(token_ids_filtered)))
 
         return results
 

@@ -131,37 +131,22 @@ def map_espnet_to_speechcatcher(espnet_key: str) -> Optional[str]:
     Returns:
         Corresponding speechcatcher parameter name, or None if not mappable
     """
-    # Direct mappings
-    if espnet_key.startswith("encoder.embed."):
-        # Conv2d subsampling
-        return espnet_key.replace("encoder.embed.", "encoder.embed.conv.")
-
-    if espnet_key.startswith("encoder.encoders."):
-        # Encoder layers
-        return espnet_key.replace("encoder.encoders.", "encoder.encoders.")
-
-    if espnet_key.startswith("decoder.embed."):
-        # Decoder embedding
-        return espnet_key.replace("decoder.embed.", "decoder.embed.")
-
-    if espnet_key.startswith("decoder.decoders."):
-        # Decoder layers
-        return espnet_key.replace("decoder.decoders.", "decoder.decoders.")
-
-    if espnet_key.startswith("decoder.output_layer."):
-        return espnet_key.replace("decoder.output_layer.", "decoder.output_layer.")
-
-    if espnet_key.startswith("decoder.after_norm."):
-        return espnet_key.replace("decoder.after_norm.", "decoder.after_norm.")
-
-    if espnet_key.startswith("ctc."):
-        return espnet_key  # Keep CTC keys as-is
-
-    # Parameters that don't need mapping
-    if any(espnet_key.startswith(prefix) for prefix in ["encoder.after_norm.", "encoder.normalize_before"]):
+    # Most keys map directly - ESPnet and speechcatcher use same structure
+    # Just return the key as-is for most cases
+    if espnet_key.startswith("encoder."):
         return espnet_key
 
-    return None
+    if espnet_key.startswith("decoder."):
+        return espnet_key
+
+    if espnet_key.startswith("ctc."):
+        return espnet_key
+
+    # Frontend and normalization stats - these might not exist in our model
+    if espnet_key.startswith("frontend.") or espnet_key.startswith("normalize_"):
+        return None  # Skip frontend parameters
+
+    return espnet_key  # Pass through other keys
 
 
 def load_espnet_weights(

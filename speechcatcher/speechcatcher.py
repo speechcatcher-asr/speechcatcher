@@ -25,7 +25,7 @@ import threading
 import itertools
 warnings.filterwarnings("ignore")
 
-from espnet_streaming_decoder.asr_inference_streaming import Speech2TextStreaming
+from speechcatcher.speech2text_streaming import Speech2TextStreaming
 
 from espnet_model_zoo.downloader import ModelDownloader
 import numpy as np
@@ -76,17 +76,32 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
       - a direct https URL to a packed ESPnet model archive
       - a local path to a packed archive
     """
+    from pathlib import Path
+
     espnet_model_downloader = ModelDownloader(cache_dir)
     # IMPORTANT: just pass tag verbatim; ModelDownloader will now do the right thing.
     info = espnet_model_downloader.download_and_unpack(tag, quiet=quiet)
 
+    # Extract model directory from info dict
+    # The info dict contains file paths - use one to get the model directory
+    model_dir = None
+    for key in ['asr_model_file', 'asr_train_config', 'model_file', 'train_config']:
+        if key in info and info[key]:
+            model_dir = Path(info[key]).parent
+            break
+
+    if model_dir is None:
+        raise ValueError(f"Could not determine model directory from info: {info}")
+
+    if not quiet:
+        print(f"Loading model from {model_dir}")
+
     return Speech2TextStreaming(
-        **info,
-        device=device, token_type=None, bpemodel=None,
-        maxlenratio=0.0, minlenratio=0.0, beam_size=beam_size,
-        ctc_weight=0.3, lm_weight=0.0, penalty=0.0, nbest=1,
-        disable_repetition_detection=True,
-        decoder_text_length_limit=0, encoded_feat_length_limit=0
+        model_dir=model_dir,
+        beam_size=beam_size,
+        ctc_weight=0.1,  # Reduced from 0.3 - decoder needs more weight
+        device=device,
+        dtype="float32"
     )
 
 # Convert input file to 16 kHz mono, use stdout to capture the output in-memory
@@ -459,23 +474,26 @@ def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rat
 
     # avoid sending very short chunks through speech2text_global
     if chunk_length > 10:
-        results = speech2text_global(speech=speech_chunk, is_final=is_final, always_assemble_hyps= not (quiet or progress))
+        results = speech2text_global(speech=speech_chunk, is_final=is_final)
         
         if quiet or progress:
             if is_final:
-                #nbests = [text for text, token, token_int, hyp in results]
-                
+                # New API returns (text, tokens, token_ids) - 3-tuple
                 utterance_text = results[0][0] if results is not None and len(results) > 0 else ""
                 utterance_token = results[0][1] if results is not None and len(results) > 0 else []
-                utterance_pos = results[0][-2] if results is not None and len(results) > 0 else []
-                utterance_hyp = results[0][-3] if results is not None and len(results) > 0 else {}
+                # Token positions/timestamps not yet available in new implementation
+                # Generate dummy timestamps (frame positions) for each token
+                utterance_pos = [float(i * 10) for i in range(len(utterance_token))]  # 10 frames per token
+                utterance_hyp = {}
         else:
             if results is not None and len(results) > 0:
-                #nbests = [text, tokenpos for text, token, token_int, token_pos, hyp in results]
-                utterance_text = results[0][0] #nbests[0] if nbests is not None and len(nbests) > 0 else ""
+                # New API returns (text, tokens, token_ids) - 3-tuple
+                utterance_text = results[0][0]
                 utterance_token = results[0][1]
-                utterance_pos = results[0][-2]
-                utterance_hyp = results[0][-3]            
+                # Token positions/timestamps not yet available in new implementation
+                # Generate dummy timestamps (frame positions) for each token
+                utterance_pos = [float(i * 10) for i in range(len(utterance_token))]  # 10 frames per token
+                utterance_hyp = {}            
 
                 prev_lines = progress_output(results[0][0], prev_lines)
             else:
@@ -587,7 +605,8 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
                 sys.stdout.write('\n')
                 prev_lines = 0
 
-        nbests = [text for text, token, token_int, hyp in results]
+        # New API returns (text, tokens, token_ids) - extract text
+        nbests = [result[0] for result in results]
         prev_lines = progress_output(nbests[0], prev_lines)
 
     # Write debug wav as output file (will only be executed after shutdown)

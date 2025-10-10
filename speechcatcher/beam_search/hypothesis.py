@@ -10,30 +10,34 @@ import torch
 class Hypothesis:
     """Single hypothesis in beam search.
 
+    Matches ESPnet's Hypothesis structure for compatibility.
+
     Attributes:
-        yseq: Token sequence (list of token IDs)
+        yseq: Token sequence (torch.Tensor of token IDs)
         score: Total log probability score
         scores: Score breakdown by component (e.g., 'decoder', 'ctc', 'lm')
-        states: Decoder states (list of tensors for each layer)
-        yseq_tensor: Cached tensor version of yseq
+        states: Per-scorer states dict {scorer_name: state}
+        xpos: Encoder frame positions for each token (torch.Tensor)
     """
 
-    yseq: List[int] = field(default_factory=list)
+    yseq: torch.Tensor = field(default_factory=lambda: torch.tensor([], dtype=torch.long))
     score: float = 0.0
     scores: Dict[str, float] = field(default_factory=dict)
-    states: Optional[List[torch.Tensor]] = None
-    yseq_tensor: Optional[torch.Tensor] = None
+    states: Dict[str, Any] = field(default_factory=dict)
+    xpos: torch.Tensor = field(default_factory=lambda: torch.tensor([], dtype=torch.long))
 
     def asdict(self) -> Dict[str, Any]:
         """Convert to dictionary (for compatibility with ESPnet)."""
         return {
-            "yseq": torch.tensor(self.yseq, dtype=torch.long),
+            "yseq": self.yseq,
             "score": self.score,
             "scores": self.scores,
         }
 
     def __repr__(self) -> str:
-        return f"Hypothesis(yseq={self.yseq[:10]}{'...' if len(self.yseq) > 10 else ''}, score={self.score:.2f})"
+        yseq_list = self.yseq.tolist() if len(self.yseq) > 0 else []
+        yseq_str = str(yseq_list[:10]) + ('...' if len(yseq_list) > 10 else '')
+        return f"Hypothesis(yseq={yseq_str}, score={self.score:.2f})"
 
 
 @dataclass
@@ -64,20 +68,22 @@ class BeamState:
         )
 
 
-def create_initial_hypothesis(sos_id: int = 1) -> Hypothesis:
+def create_initial_hypothesis(sos_id: int = 1, device: str = "cpu") -> Hypothesis:
     """Create initial hypothesis with SOS token.
 
     Args:
         sos_id: Start-of-sentence token ID
+        device: Device to place tensors on
 
     Returns:
         Initial hypothesis
     """
     return Hypothesis(
-        yseq=[sos_id],
+        yseq=torch.tensor([sos_id], dtype=torch.long, device=device),
         score=0.0,
         scores={},
-        states=None,
+        states={},
+        xpos=torch.tensor([0], dtype=torch.long, device=device),
     )
 
 
@@ -94,22 +100,23 @@ def batch_hypotheses(hypotheses: List[Hypothesis], device: str = "cpu") -> Dict[
     if not hypotheses:
         return {}
 
-    # Batch yseq
+    # Batch yseq (already torch.Tensor in each hypothesis)
     max_len = max(len(h.yseq) for h in hypotheses)
     yseq_batch = torch.zeros(len(hypotheses), max_len, dtype=torch.long, device=device)
 
     for i, h in enumerate(hypotheses):
-        yseq_batch[i, : len(h.yseq)] = torch.tensor(h.yseq, dtype=torch.long)
+        yseq_batch[i, : len(h.yseq)] = h.yseq.to(device)
 
-    # Batch states if available
-    states_batch = None
-    if hypotheses[0].states is not None:
-        # States are list of tensors (one per layer)
-        n_layers = len(hypotheses[0].states)
-        states_batch = [
-            torch.stack([h.states[layer_idx] for h in hypotheses])
-            for layer_idx in range(n_layers)
-        ]
+    # Batch states - now dict-based
+    # States is Dict[str, Any] where each scorer has its own state
+    # We need to reorganize this for batch processing
+    states_batch = {}
+    if hypotheses[0].states:
+        # Get all scorer names
+        scorer_names = hypotheses[0].states.keys()
+        for scorer_name in scorer_names:
+            # Each scorer's state is a list of layer states
+            states_batch[scorer_name] = [h.states[scorer_name] for h in hypotheses]
 
     return {
         "yseq": yseq_batch,
@@ -131,28 +138,27 @@ def top_k_hypotheses(hypotheses: List[Hypothesis], k: int) -> List[Hypothesis]:
     return sorted(hypotheses, key=lambda h: h.score, reverse=True)[:k]
 
 
-def merge_scores(
-    hypotheses: List[Hypothesis],
-    new_scores: Dict[str, torch.Tensor],
-    weights: Dict[str, float],
-) -> List[Hypothesis]:
-    """Merge new scores into hypotheses.
+def append_token(tensor: torch.Tensor, token_id: int) -> torch.Tensor:
+    """Append a token to a tensor sequence.
 
     Args:
-        hypotheses: List of hypotheses (will be modified in place)
-        new_scores: Dictionary of new scores {'scorer_name': (batch, vocab)}
-        weights: Dictionary of scorer weights {'scorer_name': weight}
+        tensor: Original sequence tensor
+        token_id: Token ID to append
 
     Returns:
-        Updated hypotheses
+        New tensor with token appended
     """
-    for i, h in enumerate(hypotheses):
-        # Update individual scores
-        for scorer_name, scores in new_scores.items():
-            if scores is not None:
-                h.scores[scorer_name] = scores[i].item() if scores.dim() > 0 else scores.item()
+    return torch.cat([tensor, torch.tensor([token_id], dtype=torch.long, device=tensor.device)])
 
-        # Update total score as weighted sum
-        h.score = sum(h.scores.get(name, 0.0) * weight for name, weight in weights.items())
 
-    return hypotheses
+def append_position(xpos: torch.Tensor, position: int) -> torch.Tensor:
+    """Append an encoder position to xpos tensor.
+
+    Args:
+        xpos: Original position tensor
+        position: Encoder frame position to append
+
+    Returns:
+        New tensor with position appended
+    """
+    return torch.cat([xpos, torch.tensor([position], dtype=torch.long, device=xpos.device)])
