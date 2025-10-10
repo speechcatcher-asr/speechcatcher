@@ -226,6 +226,12 @@ class Speech2TextStreaming:
         self.beam_state = None
         self.processed_frames = 0
         self.frontend_states = None  # {"waveform_buffer": tensor}
+
+        # Reset encoder buffer and block counter in beam search
+        if hasattr(self.beam_search, 'encoder_buffer'):
+            self.beam_search.encoder_buffer = None
+            self.beam_search.processed_block = 0
+
         logger.debug("Streaming state reset")
 
     def normalize_features(self, features: np.ndarray) -> np.ndarray:

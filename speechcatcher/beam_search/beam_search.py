@@ -284,6 +284,11 @@ class BlockwiseSynchronousBeamSearch:
         self.use_bbd = use_bbd
         self.bbd_conservative = bbd_conservative
 
+        # Encoder output buffer (accumulated across chunks)
+        # This is CRITICAL for streaming! Matches ESPnet's encbuffer
+        self.encoder_buffer = None
+        self.processed_block = 0
+
         # Internal beam search for each block with BBD
         self.beam_search = BeamSearch(
             scorers=scorers,
@@ -389,7 +394,10 @@ class BlockwiseSynchronousBeamSearch:
         prev_state: Optional[BeamState] = None,
         is_final: bool = False,
     ) -> BeamState:
-        """Process a single block of features.
+        """Process features with encoder buffering and block extraction.
+
+        This implements the critical buffering mechanism from ESPnet's
+        batch_beam_search_online.py that we were missing!
 
         Args:
             features: Input features (1, time, feat_dim)
@@ -408,29 +416,128 @@ class BlockwiseSynchronousBeamSearch:
                 processed_frames=0,
             )
 
-        # Encode block
+        # Step 1: Encode features
         # CRITICAL: Use infer_mode=True for streaming!
         # ESPnet streaming uses infer_mode=True (asr_inference_streaming.py:330)
-        # Batch mode uses infer_mode=False (or doesn't pass it)
-        encoder_out, encoder_out_lens, encoder_states = self.encoder(
-            features,
-            feature_lens,
-            prev_states=prev_state.encoder_states,
-            is_final=is_final,
-            infer_mode=True,  # Streaming mode!
-        )
+
+        # Check if features are too small for encoder (conv2d kernel is 3x3)
+        # If features are too small, skip encoding and use empty output
+        if features.size(1) < 3:
+            logger.debug(f"Skipping encoder: features too small ({features.shape}, need >=3 frames)")
+            encoder_out = torch.zeros(
+                1, 0, 256,  # Empty encoder output
+                dtype=features.dtype,
+                device=features.device,
+            )
+            encoder_out_lens = torch.tensor([0], dtype=torch.long)
+            encoder_states = prev_state.encoder_states  # Keep previous states
+        else:
+            encoder_out, encoder_out_lens, encoder_states = self.encoder(
+                features,
+                feature_lens,
+                prev_states=prev_state.encoder_states,
+                is_final=is_final,
+                infer_mode=True,  # Streaming mode!
+            )
+
+        # Step 2: Accumulate encoder outputs in buffer
+        # This is the CRITICAL missing piece! Matches ESPnet's encbuffer logic
+        # (batch_beam_search_online.py:118-121)
+        if encoder_out.size(1) > 0:  # Only accumulate if encoder produced output
+            if self.encoder_buffer is None:
+                self.encoder_buffer = encoder_out
+                logger.debug(f"Initialized encoder buffer: {self.encoder_buffer.shape}")
+            else:
+                self.encoder_buffer = torch.cat([self.encoder_buffer, encoder_out], dim=1)
+                logger.debug(f"Accumulated encoder buffer: {self.encoder_buffer.shape}")
+
+        # Step 3: Extract and process blocks from buffer
+        # Match ESPnet's block extraction logic (batch_beam_search_online.py:132-168)
+        current_state = prev_state
+        ret = None
+
+        while True:
+            # Calculate current block end frame
+            # Formula from ESPnet: block_size - look_ahead + hop_size * processed_block
+            cur_end_frame = (
+                self.block_size - self.look_ahead +
+                self.hop_size * self.processed_block
+            )
+
+            logger.debug(f"Block {self.processed_block}: cur_end_frame={cur_end_frame}, "
+                        f"buffer_size={self.encoder_buffer.shape[1] if self.encoder_buffer is not None else 0}")
+
+            # Check if we have enough frames in buffer for this block
+            if self.encoder_buffer is not None and cur_end_frame <= self.encoder_buffer.shape[1]:
+                # Extract block from buffer: frames [0, cur_end_frame)
+                block_encoder_out = self.encoder_buffer.narrow(1, 0, cur_end_frame)
+                block_is_final = False
+
+                logger.debug(f"Processing block {self.processed_block} with {cur_end_frame} frames")
+
+                # Process this block
+                current_state = self._decode_one_block(
+                    block_encoder_out,
+                    current_state,
+                    block_is_final
+                )
+
+                ret = current_state
+                self.processed_block += 1
+            elif is_final and self.encoder_buffer is not None and self.encoder_buffer.shape[1] > 0:
+                # Final chunk: process remaining buffer
+                logger.debug(f"Final block with {self.encoder_buffer.shape[1]} frames")
+
+                current_state = self._decode_one_block(
+                    self.encoder_buffer,
+                    current_state,
+                    is_final=True
+                )
+
+                ret = current_state
+                break
+            else:
+                # Not enough frames yet, wait for more input
+                logger.debug(f"Waiting for more frames (need {cur_end_frame}, have {self.encoder_buffer.shape[1] if self.encoder_buffer is not None else 0})")
+                break
+
+        # Update encoder states for next chunk
+        if ret is not None:
+            ret.encoder_states = encoder_states
+
+        return ret if ret is not None else prev_state
+
+    def _decode_one_block(
+        self,
+        encoder_out: torch.Tensor,
+        prev_state: BeamState,
+        is_final: bool = False,
+    ) -> BeamState:
+        """Decode one block of encoder output.
+
+        This replaces the old inline decoding logic in process_block.
+
+        Args:
+            encoder_out: Encoder output block (1, time, dim)
+            prev_state: Previous beam state
+            is_final: Whether this is the final block
+
+        Returns:
+            Updated beam state
+        """
 
         # Extend scorers with new encoder output (for streaming CTC support)
         # This calls extend_prob() on scorers and extend_state() on hypotheses
         extended_hypotheses = self.extend_scorers(encoder_out, prev_state.hypotheses)
 
         # Update state with extended hypotheses
+        # Note: We don't update encoder_states here - that's done in process_block
         new_state = BeamState(
             hypotheses=extended_hypotheses,
-            encoder_states=encoder_states,
+            encoder_states=None,  # Will be set by process_block
             encoder_out=encoder_out,
-            encoder_out_lens=encoder_out_lens,
-            processed_frames=prev_state.processed_frames + features.size(1),
+            encoder_out_lens=torch.tensor([encoder_out.size(1)], dtype=torch.long),
+            processed_frames=prev_state.processed_frames,  # Don't increment here
             is_final=is_final,
         )
 
