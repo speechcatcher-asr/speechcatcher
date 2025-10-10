@@ -190,8 +190,9 @@ class Speech2TextStreaming:
 
             encoder_conf = config.get("encoder_conf", {})
             decoder_conf = config.get("decoder_conf", {})
+            frontend_conf = config.get("frontend_conf", {})
 
-            # Build model
+            # Build model (read architecture params from config)
             model = ESPnetASRModel.build_model(
                 vocab_size=vocab_size,
                 input_size=80,  # Standard log-mel
@@ -201,6 +202,9 @@ class Speech2TextStreaming:
                 decoder_attention_heads=decoder_conf.get("attention_heads", 4),
                 decoder_num_blocks=decoder_conf.get("num_blocks", 6),
                 use_frontend=True,  # Enable STFT frontend for raw audio
+                frontend_n_fft=frontend_conf.get("n_fft", 512),
+                frontend_hop_length=frontend_conf.get("hop_length", 160),
+                frontend_win_length=frontend_conf.get("win_length", 400),
             )
         else:
             # Fallback to default architecture

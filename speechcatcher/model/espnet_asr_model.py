@@ -209,6 +209,9 @@ class ESPnetASRModel(nn.Module):
         use_ctc: bool = True,
         use_decoder: bool = True,
         ctc_weight: float = 0.3,
+        frontend_n_fft: int = 512,
+        frontend_hop_length: int = 160,
+        frontend_win_length: int = 400,
         **kwargs,
     ) -> "ESPnetASRModel":
         """Build an ESPnet ASR model from configuration.
@@ -227,6 +230,9 @@ class ESPnetASRModel(nn.Module):
             use_ctc: Whether to include CTC head
             use_decoder: Whether to include attention decoder
             ctc_weight: CTC loss weight
+            frontend_n_fft: FFT size for STFT (default: 512)
+            frontend_hop_length: Hop length for STFT (default: 160)
+            frontend_win_length: Window length for STFT (default: 400)
             **kwargs: Additional arguments for encoder/decoder
 
         Returns:
@@ -236,9 +242,9 @@ class ESPnetASRModel(nn.Module):
         frontend = None
         if use_frontend:
             frontend = STFTFrontend(
-                n_fft=512,
-                hop_length=160,
-                win_length=400,
+                n_fft=frontend_n_fft,
+                hop_length=frontend_hop_length,
+                win_length=frontend_win_length,
                 n_mels=input_size,
             )
 
