@@ -350,79 +350,37 @@ class BlockwiseSynchronousBeamSearch:
 
         return updated_hypotheses
 
-    def compute_reliability_scores(
+    def detect_repetition_or_eos(
         self,
         hypotheses: List[Hypothesis],
-        scores: torch.Tensor,
-        encoder_out: torch.Tensor,
-        evaluated_hyps: set,
-    ) -> List[float]:
-        """Compute reliability scores for BBD (Block Boundary Detection).
+    ) -> bool:
+        """Detect if any hypothesis has repetition or EOS.
 
-        Based on Equation (12-13) from Tsunoo et al., 2021:
-
-        r(y_{0:i-1}, h_{1:b}) = max over j in [0, i-1]:
-            log p(y_j | y_{0:i-1}, h_{1:b}) + α(y_{0:i-1}, h_{1:b})
-
-        s(y_{0:i}, h_{1:b}) = α(y_{0:i}, h_{1:b}) - r(y_{0:i-1}, h_{1:b})
-
-        If s ≤ 0: hypothesis is unreliable (has <eos> or repetition with higher score)
+        Simplified BBD from ESPnet's batch_beam_search_online.py (lines 209-218).
+        Instead of complex reliability scores, just check:
+        - Is the last predicted token already in the sequence? (repetition)
+        - Is the last predicted token <eos>?
 
         Args:
-            hypotheses: Current hypotheses (y_{0:i-1})
-            scores: Scores for next tokens (batch, vocab_size)
-            encoder_out: Encoder output h_{1:b}
-            evaluated_hyps: Set of already evaluated hypothesis sequences (Ω_R)
+            hypotheses: Current hypotheses
 
         Returns:
-            List of reliability scores, one per hypothesis
+            True if repetition or EOS detected in any hypothesis
         """
-        reliability_scores = []
-
-        for i, hyp in enumerate(hypotheses):
-            # Current hypothesis score: α(y_{0:i-1}, h_{1:b})
-            current_score = hyp.score
-
-            # Find repetitions: tokens that already exist in yseq
-            # Note: <sos> and <eos> are the same token, so <eos> is always a repetition
-            yseq_list = hyp.yseq.tolist()
-
-            # Compute r(y_{0:i-1}, h_{1:b}): highest score among repetitions
-            # For each token j in [0, i-1], compute score of appending y_j
-            max_repetition_score = float('-inf')
-
-            for token_id in set(yseq_list):  # Check each unique token in history
-                # Skip if this repetition was already evaluated
-                hyp_with_rep = tuple(yseq_list + [token_id])
-                if hyp_with_rep in evaluated_hyps:
-                    continue
-
-                # Score of appending this repeated token
-                # log p(y_j | y_{0:i-1}, h_{1:b}) + α(y_{0:i-1}, h_{1:b})
-                repetition_score = current_score + scores[i, token_id].item()
-                max_repetition_score = max(max_repetition_score, repetition_score)
-
-            # If no unevaluated repetitions, assume reliable (no constraint)
-            if max_repetition_score == float('-inf'):
-                reliability_scores.append(float('inf'))
+        for hyp in hypotheses:
+            if len(hyp.yseq) < 2:
                 continue
 
-            # r(y_{0:i-1}, h_{1:b})
-            r_score = max_repetition_score
+            last_token = hyp.yseq[-1].item()
 
-            # For the next token, check reliability
-            # We need to check the TOP token that would be appended
-            # s(y_{0:i}, h_{1:b}) = α(y_{0:i}, h_{1:b}) - r(y_{0:i-1}, h_{1:b})
+            # Check if last token appears in previous tokens (repetition)
+            # Note: <sos> == <eos>, so EOS is always a repetition of SOS
+            prev_tokens = hyp.yseq[:-1].tolist()
+            if last_token in prev_tokens:
+                logger.debug(f"BBD: Detected repetition - token {last_token} in {hyp.yseq.tolist()}")
+                return True
 
-            # Get the best next token score
-            best_next_score = scores[i].max().item()
-            alpha_next = current_score + best_next_score  # α(y_{0:i}, h_{1:b})
-
-            # Reliability score
-            s_score = alpha_next - r_score
-            reliability_scores.append(s_score)
-
-        return reliability_scores
+        return False
 
     def process_block(
         self,
@@ -451,14 +409,15 @@ class BlockwiseSynchronousBeamSearch:
             )
 
         # Encode block
-        # NOTE: Use infer_mode=False to match batch mode behavior
-        # Batch mode doesn't pass infer_mode, so it defaults to False and uses forward_train
+        # CRITICAL: Use infer_mode=True for streaming!
+        # ESPnet streaming uses infer_mode=True (asr_inference_streaming.py:330)
+        # Batch mode uses infer_mode=False (or doesn't pass it)
         encoder_out, encoder_out_lens, encoder_states = self.encoder(
             features,
             feature_lens,
             prev_states=prev_state.encoder_states,
             is_final=is_final,
-            infer_mode=False,  # Match batch mode
+            infer_mode=True,  # Streaming mode!
         )
 
         # Extend scorers with new encoder output (for streaming CTC support)
@@ -494,34 +453,8 @@ class BlockwiseSynchronousBeamSearch:
                     new_state.hypotheses, encoder_out
                 )
 
-                # BBD: Check reliability scores BEFORE expanding
-                if self.use_bbd and not is_final:
-                    reliability_scores = self.compute_reliability_scores(
-                        new_state.hypotheses, scores, encoder_out, new_state.evaluated_hyps
-                    )
-
-                    # If ANY hypothesis is unreliable (s ≤ 0), stop and wait for next block
-                    has_unreliable = any(s <= 0 for s in reliability_scores)
-
-                    if has_unreliable:
-                        logger.debug(f"BBD: Unreliable hypothesis detected at step {step}, "
-                                   f"min_reliability={min(reliability_scores):.4f}, stopping block")
-
-                        # Store all current hypotheses in evaluated set (Ω_R)
-                        for hyp in new_state.hypotheses:
-                            new_state.evaluated_hyps.add(tuple(hyp.yseq.tolist()))
-
-                        # Revert to previous step (conservative: i-2, non-conservative: i-1)
-                        if self.bbd_conservative and len(prev_step_hypotheses) > 0:
-                            # Conservative: go back 2 steps
-                            new_state.hypotheses = prev_step_hypotheses
-                            new_state.output_index -= 2
-                        else:
-                            # Non-conservative: go back 1 step (keep current)
-                            new_state.output_index -= 1
-
-                        # Stop decoding this block, wait for more encoder output
-                        break
+                # Expand and prune beam FIRST, then check for repetition/EOS
+                # This matches ESPnet's approach (expand, then check, then potentially rollback)
 
                 # Expand and prune beam
                 new_hypotheses = []
@@ -553,11 +486,28 @@ class BlockwiseSynchronousBeamSearch:
                         )
                         new_hypotheses.append(new_hyp)
 
-                # Save current hypotheses for potential rollback
-                prev_step_hypotheses = new_state.hypotheses
-
                 # Prune to beam size
                 new_state.hypotheses = top_k_hypotheses(new_hypotheses, self.beam_size)
+
+                # BBD: Check for repetition/EOS AFTER beam expansion
+                # Matches ESPnet's approach (batch_beam_search_online.py:209-218)
+                if self.use_bbd and not is_final:
+                    has_repetition = self.detect_repetition_or_eos(new_state.hypotheses)
+
+                    if has_repetition:
+                        logger.debug(f"BBD: Repetition/EOS detected at step {step}, stopping block")
+
+                        # Rollback to previous hypotheses (1 step, matching ESPnet)
+                        if len(prev_step_hypotheses) > 0:
+                            new_state.hypotheses = prev_step_hypotheses
+                            new_state.output_index -= 1
+                            logger.debug(f"BBD: Rolled back to output_index={new_state.output_index}")
+
+                        # Stop decoding this block, wait for more encoder output
+                        break
+
+                # Save current hypotheses for potential rollback in next iteration
+                prev_step_hypotheses = new_state.hypotheses
 
                 # Check if all hypotheses ended with EOS (only stop if is_final)
                 all_eos = all(h.yseq[-1].item() == self.eos_id for h in new_state.hypotheses)

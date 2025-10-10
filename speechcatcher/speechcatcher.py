@@ -246,7 +246,12 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
         buf = wavfile_in.readframes(-1)
         raw_speech_data = np.frombuffer(buf, dtype='int16')
 
-    chunk_length = 8192
+    # chunk_length: Number of raw audio samples per chunk
+    # For streaming transformer with block_size=40, hop_size=16, look_ahead=16:
+    # - First block needs: (40 - 16) = 24 encoder frames
+    # - 24 encoder frames × 4 (subsampling) × 160 (STFT hop) = 15,360 samples minimum
+    # - Full block: 40 × 4 × 160 = 25,600 samples (1.6s at 16kHz)
+    chunk_length = 25600  # Was 8192
     complete_text, auxiliary_info = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet)
 
     # Automatically generate output .txt name from media_path if it isnt set
