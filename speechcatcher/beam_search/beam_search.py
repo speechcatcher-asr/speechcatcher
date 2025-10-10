@@ -443,6 +443,7 @@ class BlockwiseSynchronousBeamSearch:
         # Step 2: Accumulate encoder outputs in buffer
         # This is the CRITICAL missing piece! Matches ESPnet's encbuffer logic
         # (batch_beam_search_online.py:118-121)
+        logger.debug(f"Encoder produced: {encoder_out.shape}")
         if encoder_out.size(1) > 0:  # Only accumulate if encoder produced output
             if self.encoder_buffer is None:
                 self.encoder_buffer = encoder_out
@@ -450,6 +451,8 @@ class BlockwiseSynchronousBeamSearch:
             else:
                 self.encoder_buffer = torch.cat([self.encoder_buffer, encoder_out], dim=1)
                 logger.debug(f"Accumulated encoder buffer: {self.encoder_buffer.shape}")
+        else:
+            logger.debug(f"Encoder produced empty output, not accumulating")
 
         # Step 3: Extract and process blocks from buffer
         # Match ESPnet's block extraction logic (batch_beam_search_online.py:132-168)
