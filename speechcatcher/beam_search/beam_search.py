@@ -420,6 +420,8 @@ class BlockwiseSynchronousBeamSearch:
         # CRITICAL: Use infer_mode=True for streaming!
         # ESPnet streaming uses infer_mode=True (asr_inference_streaming.py:330)
 
+        logger.debug(f"process_block: features={features.shape}, is_final={is_final}, prev_encoder_states={'present' if prev_state.encoder_states else 'None'}")
+
         # Check if features are too small for encoder (conv2d kernel is 3x3)
         # If features are too small, skip encoding and use empty output
         if features.size(1) < 3:
@@ -432,6 +434,7 @@ class BlockwiseSynchronousBeamSearch:
             encoder_out_lens = torch.tensor([0], dtype=torch.long)
             encoder_states = prev_state.encoder_states  # Keep previous states
         else:
+            logger.debug(f"Calling encoder with features={features.shape}, prev_states={'present' if prev_state.encoder_states else 'None'}")
             encoder_out, encoder_out_lens, encoder_states = self.encoder(
                 features,
                 feature_lens,
@@ -439,6 +442,7 @@ class BlockwiseSynchronousBeamSearch:
                 is_final=is_final,
                 infer_mode=True,  # Streaming mode!
             )
+            logger.debug(f"Encoder returned: {encoder_out.shape}")
 
         # Step 2: Accumulate encoder outputs in buffer
         # This is the CRITICAL missing piece! Matches ESPnet's encbuffer logic
@@ -505,10 +509,15 @@ class BlockwiseSynchronousBeamSearch:
                 break
 
         # Update encoder states for next chunk
+        # CRITICAL: Always update encoder_states, even if ret is None!
+        # The encoder needs states to be passed for streaming to work.
         if ret is not None:
             ret.encoder_states = encoder_states
-
-        return ret if ret is not None else prev_state
+            return ret
+        else:
+            # No blocks processed yet, but MUST preserve encoder states
+            prev_state.encoder_states = encoder_states
+            return prev_state
 
     def _decode_one_block(
         self,

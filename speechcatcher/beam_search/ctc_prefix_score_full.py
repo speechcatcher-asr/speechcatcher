@@ -348,8 +348,9 @@ class CTCPrefixScoreTH:
         )
 
         # Copy existing forward variables
-        start = max(r_prev.shape[0], 1)
-        r_prev_new[0:start] = r_prev
+        # Clamp to current input length to avoid out-of-bounds
+        start = min(max(r_prev.shape[0], 1), self.input_length)
+        r_prev_new[0:start] = r_prev[0:start]
 
         # Fill new time steps with cumulative blank probabilities
         # r^b[t] = r^b[t-1] + log P(blank | x_t)
