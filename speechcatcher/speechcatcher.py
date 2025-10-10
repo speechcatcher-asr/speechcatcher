@@ -285,8 +285,9 @@ def process_tasks_serially(tasks):
 # The rawspeech data should be a numpy array of dtype='int16'
 
 def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_processes=1, progress=True, quiet=False, status=None):
-    # 32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
-    speech = raw_speech_data.astype(np.float16) / 32767.0
+    # Normalize int16 audio to [-1, 1] range using float32 for precision
+    # int16 range is [-32768, 32767], so we divide by 32768 to get [-1, 1]
+    speech = raw_speech_data.astype(np.float32) / 32768.0
 
     speech_len = len(speech)
     speech_len_frames = (speech_len / rate) * 100.
@@ -475,7 +476,11 @@ def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rat
     # avoid sending very short chunks through speech2text_global
     if chunk_length > 10:
         results = speech2text_global(speech=speech_chunk, is_final=is_final)
-        
+
+        # Reset beam state after finalizing a segment to start fresh for the next one
+        if is_final:
+            speech2text_global.reset()
+
         if quiet or progress:
             if is_final:
                 # New API returns (text, tokens, token_ids) - 3-tuple

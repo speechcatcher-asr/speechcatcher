@@ -367,12 +367,14 @@ class BlockwiseSynchronousBeamSearch:
             )
 
         # Encode block
+        # NOTE: Use infer_mode=False to match batch mode behavior
+        # Batch mode doesn't pass infer_mode, so it defaults to False and uses forward_train
         encoder_out, encoder_out_lens, encoder_states = self.encoder(
             features,
             feature_lens,
             prev_states=prev_state.encoder_states,
             is_final=is_final,
-            infer_mode=True,
+            infer_mode=False,  # Match batch mode
         )
 
         # Extend scorers with new encoder output (for streaming CTC support)
