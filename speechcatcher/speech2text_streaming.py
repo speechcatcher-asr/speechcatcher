@@ -437,8 +437,20 @@ class Speech2TextStreaming:
             )
 
         # Convert hypotheses to output format
+        # For streaming: only output COMPLETED hypotheses (with EOS)
+        # For final: output all hypotheses
+        if not is_final:
+            # Filter to only completed hypotheses (ending with EOS)
+            output_hyps = [h for h in self.beam_state.hypotheses if h.yseq[-1].item() == 1023]
+            # If no completed hypotheses, output nothing
+            if not output_hyps:
+                output_hyps = []
+        else:
+            # For final: output all hypotheses
+            output_hyps = self.beam_state.hypotheses
+
         results = []
-        for hyp in self.beam_state.hypotheses:
+        for hyp in output_hyps:
             # DEBUG: Show what we're outputting
             logger.debug(f"Output: output_index={self.beam_state.output_index}, hyp.yseq={hyp.yseq.tolist()[:20]}")
 
@@ -449,8 +461,11 @@ class Speech2TextStreaming:
             # During streaming: output tokens 1 to output_index (inclusive)
             # After final: output tokens 1 to -1 (excluding SOS and EOS)
             if is_final:
-                # Remove SOS and EOS tokens (like ESPnet: hyp.yseq[1:-1])
-                token_ids = hyp.yseq[1:-1]
+                # Remove SOS token (always present at position 0)
+                token_ids = hyp.yseq[1:]
+                # Remove EOS token if present at the end
+                if len(token_ids) > 0 and token_ids[-1].item() == 1023:
+                    token_ids = token_ids[:-1]
             else:
                 # Only output committed tokens (yseq[1:output_index+1])
                 # output_index is the last committed token position

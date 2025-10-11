@@ -623,19 +623,26 @@ class BlockwiseSynchronousBeamSearch:
                 new_state.hypotheses = top_k_hypotheses(new_hypotheses, self.beam_size)
 
                 # Check for completed hypotheses (ending with EOS)
-                # This matches ESPnet's behavior: prefer completed hypotheses during streaming
+                # This matches ESPnet's behavior: prefer completed hypotheses
                 completed_hyps = [h for h in new_state.hypotheses if h.yseq[-1].item() == self.eos_id]
 
-                if len(completed_hyps) > 0 and not is_final:
-                    # ESPnet stops when ANY hypothesis reaches EOS in non-final blocks
-                    logger.info(f"Detected {len(completed_hyps)} hyp(s) reaching EOS in this block.")
+                if len(completed_hyps) > 0:
+                    if not is_final:
+                        # For streaming: stop when ANY hypothesis reaches EOS
+                        # ESPnet keeps ALL hypotheses (both completed and running) in the beam
+                        # The output layer will filter to only completed ones for output
+                        logger.info(f"Detected {len(completed_hyps)} hyp(s) reaching EOS in this block.")
+                        # Keep all hypotheses (both completed and running) for next iteration
+                        break
+                    else:
+                        # For final: stop only when BEST hypothesis reaches EOS
+                        # This allows other beams to continue if the best hasn't finished yet
+                        best_hyp = max(new_state.hypotheses, key=lambda h: h.score)
+                        best_has_eos = best_hyp.yseq[-1].item() == self.eos_id
 
-                    # Keep only completed hypotheses
-                    # ESPnet returns the best completed hypothesis
-                    new_state.hypotheses = sorted(completed_hyps, key=lambda h: h.score, reverse=True)
-
-                    # Stop decoding this block
-                    break
+                        if best_has_eos:
+                            logger.info(f"Best hypothesis reached EOS in final block.")
+                            break
 
                 # BBD: Check for repetition AFTER beam expansion
                 # Matches ESPnet's approach (batch_beam_search_online.py:209-218)
