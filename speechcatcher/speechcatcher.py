@@ -137,16 +137,16 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
     else:
         # Use native built-in implementation (default)
         if fp16:
-            print("\nWARNING: FP16 is currently not supported for this model.")
-            print("This large transformer model (30+14 layers) is numerically unstable in FP16.")
+            print("\nWARNING: FP16 is not supported for this model.")
+            print("This model was not trained with mixed precision and produces corrupted output.")
             print("FP16 will be disabled and FP32 will be used instead.")
-            print("(FP16 support requires mixed precision training and careful tuning)")
+            print("(Future models trained with AMP/mixed precision may support FP16)")
             fp16 = False
 
         dtype = "float16" if fp16 else "float32"
 
         if not quiet:
-            precision_str = "FP16" if fp16 else "FP32"
+            precision_str = "FP16 (AMP)" if fp16 else "FP32"
             print(f"Using built-in streaming decoder implementation ({precision_str})")
 
         return Speech2TextStreaming(

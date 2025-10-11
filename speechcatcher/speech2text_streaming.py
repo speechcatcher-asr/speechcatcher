@@ -53,11 +53,20 @@ class Speech2TextStreaming:
         self.ctc_weight = ctc_weight
         self.device = device
         self.dtype = getattr(torch, dtype)
+        self.use_amp = (dtype == "float16" and device.startswith("cuda"))
 
         # Load model
         logger.info(f"Loading model from {self.model_dir}")
         self.model = self._load_model()
-        self.model = self.model.to(device).to(self.dtype)
+
+        # For AMP (automatic mixed precision), keep model in FP32
+        # Autocast will automatically downcast operations to FP16 where safe
+        if self.use_amp:
+            self.model = self.model.to(device).to(torch.float32)
+            logger.info("Using AMP: model weights in FP32, operations auto-cast to FP16")
+        else:
+            self.model = self.model.to(device).to(self.dtype)
+
         self.model.eval()
 
         # Load normalization stats
@@ -331,7 +340,11 @@ class Speech2TextStreaming:
 
         if self.model.frontend is not None:
             with torch.no_grad():
-                feats, feats_lengths = self.model.frontend(speech_to_process)
+                if self.use_amp:
+                    with torch.cuda.amp.autocast():
+                        feats, feats_lengths = self.model.frontend(speech_to_process)
+                else:
+                    feats, feats_lengths = self.model.frontend(speech_to_process)
         else:
             raise RuntimeError("Model has no frontend")
 
@@ -431,10 +444,17 @@ class Speech2TextStreaming:
             speech_lengths = torch.tensor([speech.size(1)], device=self.device)
 
         # Process block with features (not raw audio)
+        # Use automatic mixed precision (autocast) if FP16 is enabled
         with torch.no_grad():
-            self.beam_state = self.beam_search.process_block(
-                speech, speech_lengths, self.beam_state, is_final
-            )
+            if self.use_amp:
+                with torch.cuda.amp.autocast():
+                    self.beam_state = self.beam_search.process_block(
+                        speech, speech_lengths, self.beam_state, is_final
+                    )
+            else:
+                self.beam_state = self.beam_search.process_block(
+                    speech, speech_lengths, self.beam_state, is_final
+                )
 
         # Convert hypotheses to output format
         # For streaming: only output COMPLETED hypotheses (with EOS)
