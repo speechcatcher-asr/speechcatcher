@@ -481,7 +481,8 @@ class BlockwiseSynchronousBeamSearch:
                         f"buffer_size={self.encoder_buffer.shape[1] if self.encoder_buffer is not None else 0}")
 
             # Check if we have enough frames in buffer for this block
-            if self.encoder_buffer is not None and cur_end_frame <= self.encoder_buffer.shape[1]:
+            # NOTE: ESPnet uses strict < comparison, not <=
+            if self.encoder_buffer is not None and cur_end_frame < self.encoder_buffer.shape[1]:
                 # Extract block from buffer: frames [0, cur_end_frame)
                 block_encoder_out = self.encoder_buffer.narrow(1, 0, cur_end_frame)
                 block_is_final = False

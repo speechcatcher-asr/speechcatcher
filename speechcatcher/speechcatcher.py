@@ -99,7 +99,7 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
     return Speech2TextStreaming(
         model_dir=model_dir,
         beam_size=beam_size,
-        ctc_weight=0.1,  # Reduced from 0.3 - decoder needs more weight
+        ctc_weight=0.3,  # From model config (decoder_weight=0.7, ctc_weight=0.3)
         device=device,
         dtype="float32"
     )
