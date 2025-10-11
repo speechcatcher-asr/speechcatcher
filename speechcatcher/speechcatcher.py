@@ -136,10 +136,11 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
         )
     else:
         # Use native built-in implementation (default)
-        # FP16 is only practical on CUDA
-        if fp16 and device == 'cpu':
-            print("\nWARNING: FP16 on CPU is extremely slow and not recommended.")
-            print("FP16 will be disabled. Use --device cuda for FP16 acceleration.")
+        if fp16:
+            print("\nWARNING: FP16 is currently not supported for this model.")
+            print("This large transformer model (30+14 layers) is numerically unstable in FP16.")
+            print("FP16 will be disabled and FP32 will be used instead.")
+            print("(FP16 support requires mixed precision training and careful tuning)")
             fp16 = False
 
         dtype = "float16" if fp16 else "float32"

@@ -41,8 +41,6 @@ class CTCPrefixScoreTH:
         margin: int = 0
     ):
         """Initialize CTC prefix scorer with probability matrix."""
-        # Use very negative number instead of -inf to avoid NaN issues
-        self.logzero = -10000000000.0
         self.blank = blank
         self.eos = eos
 
@@ -51,6 +49,13 @@ class CTCPrefixScoreTH:
         self.odim = x.size(2)
         self.dtype = x.dtype
         self.device = x.device
+
+        # Use very negative number instead of -inf to avoid NaN issues
+        # For FP16, clamp to prevent overflow (FP16 max is ±65504)
+        if self.dtype == torch.float16:
+            self.logzero = -50000.0  # Safe value for FP16
+        else:
+            self.logzero = -10000000000.0  # Original value for FP32
 
         # Pad probabilities beyond valid lengths
         # This ensures we don't use garbage values for varying-length sequences
