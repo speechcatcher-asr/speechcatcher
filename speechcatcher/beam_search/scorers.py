@@ -195,7 +195,10 @@ class CTCPrefixScorer(ScorerInterface):
                     # Check if state is compatible with current input_length
                     state_T = states[0][0].shape[0]
                     if state_T != self.impl.input_length:
-                        logger.warning(f"CTC: State time dimension {state_T} != current input_length {self.impl.input_length}, resetting state")
+                        # State from previous iteration with different time dimension
+                        # For now, reset to None (conservative approach)
+                        # TODO: Implement proper state extension
+                        logger.debug(f"CTC: State time dimension {state_T} != current input_length {self.impl.input_length}, resetting")
                         merged_state = None
                     else:
                         merged_state = (
@@ -286,7 +289,10 @@ class CTCPrefixScorer(ScorerInterface):
                     # Check if state is compatible with current input_length
                     state_T = states[0][0].shape[0]
                     if state_T != self.impl.input_length:
-                        logger.warning(f"CTC: State time dimension {state_T} != current input_length {self.impl.input_length}, resetting state")
+                        # State from previous iteration with different time dimension
+                        # For now, reset to None (conservative approach)
+                        # TODO: Implement proper state extension
+                        logger.debug(f"CTC: State time dimension {state_T} != current input_length {self.impl.input_length}, resetting")
                         merged_state = None
                     else:
                         merged_state = (
@@ -324,20 +330,22 @@ class CTCPrefixScorer(ScorerInterface):
 
         This is called in streaming mode when a new encoder block arrives.
 
-        TEMPORARY IMPLEMENTATION: Just reinitialize with new encoder output
-        instead of extending. This is less efficient but avoids complexity
-        of proper state accumulation.
-
         Args:
             x: New encoder output (batch, enc_len_new, enc_dim)
         """
         import logging
         logger = logging.getLogger(__name__)
-        logger.debug(f"CTC extend_prob: Reinitializing with encoder output shape {x.shape}")
 
-        # TEMPORARY: Reinitialize instead of extending
-        # TODO: Implement proper extend_prob that accumulates frames
-        self.impl = None  # Force reinitialization in batch_score
+        # First call: initialize the scorer
+        if self.impl is None:
+            logger.debug(f"CTC extend_prob: Initializing with encoder output shape {x.shape}")
+            self.batch_init_state(x)
+            return
+
+        # Subsequent calls: extend the probability matrix
+        logger.debug(f"CTC extend_prob: Extending from T={self.impl.input_length} to T={x.shape[1]}")
+        logp_ctc = self.ctc.ctc_lo(x)
+        self.impl.extend_prob(logp_ctc)
 
     def extend_state(self, state: Optional[Tuple]) -> Optional[Tuple]:
         """Extend forward variables when probability matrix grows.

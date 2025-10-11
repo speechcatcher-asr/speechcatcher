@@ -362,7 +362,7 @@ class CTCPrefixScoreTH:
         # Fill new time steps with cumulative blank probabilities
         # r^b[t] = r^b[t-1] + log P(blank | x_t)
         for t in range(start, self.input_length):
-            r_prev_new[t, 1] = r_prev_new[t - 1, 1] + self.x[0, t, :, self.blank]
+            r_prev_new[t, 1] = r_prev_new[t - 1, 1] + self.x[0, t, 0, self.blank]
 
         # Return 4 elements (consistent with select_state output)
         return (r_prev_new, s_prev, f_min_prev, f_max_prev)
