@@ -213,6 +213,8 @@ class CTCPrefixScoreTH:
             # No windowing: process all frames
             f_min = f_max = 0
             start = max(output_length, 1)
+            # Clamp start to ensure start-1 < input_length (prevent index out of bounds)
+            start = min(start, self.input_length)
             end = self.input_length
 
         # ============================================
