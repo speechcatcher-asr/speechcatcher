@@ -457,6 +457,11 @@ class Speech2TextStreaming:
                 end_idx = min(self.beam_state.output_index + 1, len(hyp.yseq))
                 token_ids = hyp.yseq[1:end_idx]
 
+                # If hypothesis ended with EOS, exclude it from output
+                # This happens when a hypothesis completes during streaming
+                if len(token_ids) > 0 and token_ids[-1].item() == 1023:
+                    token_ids = token_ids[:-1]
+
             # Remove blank tokens (ID=0) - original does: filter(lambda x: x != 0, token_int)
             token_ids_filtered = [tid for tid in token_ids if tid != 0]
 

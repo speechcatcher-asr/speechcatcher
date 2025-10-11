@@ -622,13 +622,28 @@ class BlockwiseSynchronousBeamSearch:
                 # Prune to beam size
                 new_state.hypotheses = top_k_hypotheses(new_hypotheses, self.beam_size)
 
-                # BBD: Check for repetition/EOS AFTER beam expansion
+                # Check for completed hypotheses (ending with EOS)
+                # This matches ESPnet's behavior: prefer completed hypotheses during streaming
+                completed_hyps = [h for h in new_state.hypotheses if h.yseq[-1].item() == self.eos_id]
+
+                if len(completed_hyps) > 0 and not is_final:
+                    # ESPnet stops when ANY hypothesis reaches EOS in non-final blocks
+                    logger.info(f"Detected {len(completed_hyps)} hyp(s) reaching EOS in this block.")
+
+                    # Keep only completed hypotheses
+                    # ESPnet returns the best completed hypothesis
+                    new_state.hypotheses = sorted(completed_hyps, key=lambda h: h.score, reverse=True)
+
+                    # Stop decoding this block
+                    break
+
+                # BBD: Check for repetition AFTER beam expansion
                 # Matches ESPnet's approach (batch_beam_search_online.py:209-218)
                 if self.use_bbd and not is_final:
                     has_repetition = self.detect_repetition_or_eos(new_state.hypotheses)
 
                     if has_repetition:
-                        logger.debug(f"BBD: Repetition/EOS detected at step {step}, stopping block")
+                        logger.debug(f"BBD: Repetition detected at step {step}, stopping block")
 
                         # Rollback to previous hypotheses (1 step, matching ESPnet)
                         if len(prev_step_hypotheses) > 0:
