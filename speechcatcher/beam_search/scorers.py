@@ -62,7 +62,7 @@ class DecoderScorer(ScorerInterface):
         eos_id: End-of-sentence token ID
     """
 
-    def __init__(self, decoder: nn.Module, sos_id: int = 1, eos_id: int = 2):
+    def __init__(self, decoder: nn.Module, sos_id: int = 1023, eos_id: int = 1023):
         self.decoder = decoder
         self.sos_id = sos_id
         self.eos_id = eos_id
@@ -105,7 +105,7 @@ class CTCPrefixScorer(ScorerInterface):
         margin: Windowing margin for attention-based pruning (0=disabled)
     """
 
-    def __init__(self, ctc: nn.Module, blank_id: int = 0, eos_id: int = 2, margin: int = 0):
+    def __init__(self, ctc: nn.Module, blank_id: int = 0, eos_id: int = 1023, margin: int = 0):
         self.ctc = ctc
         self.blank_id = blank_id
         self.eos_id = eos_id

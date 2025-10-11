@@ -72,7 +72,7 @@ class BeamState:
         )
 
 
-def create_initial_hypothesis(sos_id: int = 1, device: str = "cpu") -> Hypothesis:
+def create_initial_hypothesis(sos_id: int = 1023, device: str = "cpu") -> Hypothesis:
     """Create initial hypothesis with SOS token.
 
     Args:

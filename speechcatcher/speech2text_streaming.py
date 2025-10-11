@@ -85,6 +85,7 @@ class Speech2TextStreaming:
 
         # Load BPE tokenizer if available
         self.tokenizer = None
+        self.token_list = None  # ESPnet's token vocabulary (with <blank> at position 0)
         if HAS_SENTENCEPIECE:
             bpe_paths = [
                 self.model_dir / "bpe.model",
@@ -98,6 +99,17 @@ class Speech2TextStreaming:
                         self.tokenizer = spm.SentencePieceProcessor()
                         self.tokenizer.Load(str(bpe_path))
                         logger.info(f"Loaded BPE tokenizer from {bpe_path}")
+
+                        # Build ESPnet-style token list
+                        # ESPnet removes <s> (SP ID 1) and </s> (SP ID 2) tokens
+                        # ESPnet vocabulary = ["<blank>", SP[0], SP[3..1023], "<sos/eos>"]
+                        vocab_size = self.tokenizer.GetPieceSize()
+                        self.token_list = (
+                            ["<blank>", self.tokenizer.IdToPiece(0)] +
+                            [self.tokenizer.IdToPiece(i) for i in range(3, vocab_size)] +
+                            ["<sos/eos>"]
+                        )
+                        logger.info(f"Built token list with {len(self.token_list)} tokens")
                         break
                     except Exception as e:
                         logger.warning(f"Failed to load BPE from {bpe_path}: {e}")
@@ -427,17 +439,38 @@ class Speech2TextStreaming:
         # Convert hypotheses to output format
         results = []
         for hyp in self.beam_state.hypotheses:
-            # Remove SOS and EOS tokens (like original: hyp.yseq[1:-1])
-            token_ids = hyp.yseq[1:-1]  # Skip SOS and EOS
+            # DEBUG: Show what we're outputting
+            logger.debug(f"Output: output_index={self.beam_state.output_index}, hyp.yseq={hyp.yseq.tolist()[:20]}")
+
+            # Extract committed tokens only (up to output_index)
+            # yseq structure: [SOS, t1, t2, ..., tn, (EOS if final)]
+            # output_index: number of tokens committed (excluding SOS)
+            #
+            # During streaming: output tokens 1 to output_index (inclusive)
+            # After final: output tokens 1 to -1 (excluding SOS and EOS)
+            if is_final:
+                # Remove SOS and EOS tokens (like ESPnet: hyp.yseq[1:-1])
+                token_ids = hyp.yseq[1:-1]
+            else:
+                # Only output committed tokens (yseq[1:output_index+1])
+                # output_index is the last committed token position
+                end_idx = min(self.beam_state.output_index + 1, len(hyp.yseq))
+                token_ids = hyp.yseq[1:end_idx]
 
             # Remove blank tokens (ID=0) - original does: filter(lambda x: x != 0, token_int)
             token_ids_filtered = [tid for tid in token_ids if tid != 0]
 
-            # Decode to text using BPE tokenizer if available
-            if self.tokenizer is not None:
-                # Decode token IDs to text pieces
-                tokens = [self.tokenizer.IdToPiece(int(tid)) for tid in token_ids_filtered]
+            # Decode to text using ESPnet's token list
+            # The token IDs are in ESPnet vocabulary space (with <blank> at position 0)
+            if self.token_list is not None:
+                # Convert tensor token IDs to integers and look up in token_list
+                tokens = [self.token_list[int(tid)] for tid in token_ids_filtered]
                 # Join pieces and replace sentencepiece underscore with space
+                text = "".join(tokens).replace("▁", " ").strip()
+            elif self.tokenizer is not None:
+                # Fallback: use raw SentencePiece (will be wrong if model uses ESPnet vocab!)
+                logger.warning("Using raw SentencePiece - token IDs may not match!")
+                tokens = [self.tokenizer.IdToPiece(int(tid)) for tid in token_ids_filtered]
                 text = "".join(tokens).replace("▁", " ").strip()
             else:
                 # Fallback: return token IDs as strings

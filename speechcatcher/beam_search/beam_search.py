@@ -44,8 +44,8 @@ class BeamSearch:
         weights: Dict[str, float],
         beam_size: int = 10,
         vocab_size: int = 1000,
-        sos_id: int = 1,
-        eos_id: int = 2,
+        sos_id: int = 1023,
+        eos_id: int = 1023,
         max_length: int = 500,
         device: str = "cpu",
         use_bbd: bool = True,
@@ -257,8 +257,8 @@ class BlockwiseSynchronousBeamSearch:
         weights: Dict[str, float],
         beam_size: int = 10,
         vocab_size: int = 1000,
-        sos_id: int = 1,
-        eos_id: int = 2,
+        sos_id: int = 1023,
+        eos_id: int = 1023,
         block_size: int = 40,
         hop_size: int = 16,
         look_ahead: int = 16,
@@ -378,8 +378,14 @@ class BlockwiseSynchronousBeamSearch:
 
             last_token = hyp.yseq[-1].item()
 
+            # Special case: SOS == EOS (1023)
+            # [SOS, EOS] is valid - it means "nothing to output yet"
+            # Only detect as repetition if sequence has more than just SOS+EOS
+            if last_token == self.sos_id and len(hyp.yseq) == 2:
+                logger.debug(f"BBD: Skipping [SOS, EOS] detection (valid empty sequence)")
+                continue
+
             # Check if last token appears in previous tokens (repetition)
-            # Note: <sos> == <eos>, so EOS is always a repetition of SOS
             prev_tokens = hyp.yseq[:-1].tolist()
             if last_token in prev_tokens:
                 logger.debug(f"BBD: Detected repetition - token {last_token} in {hyp.yseq.tolist()}")
@@ -575,6 +581,13 @@ class BlockwiseSynchronousBeamSearch:
                 # Expand and prune beam FIRST, then check for repetition/EOS
                 # This matches ESPnet's approach (expand, then check, then potentially rollback)
 
+                # DEBUG: Log first step scores for each block
+                if step == 0:
+                    logger.debug(f"Block {self.processed_block}, Step 0 scores (frames={encoder_out.size(1)}):")
+                    top_10_scores, top_10_tokens = torch.topk(scores[0], 10)
+                    for j, (s, t) in enumerate(zip(top_10_scores.tolist(), top_10_tokens.tolist())):
+                        logger.debug(f"  {j+1}. Token {t:4d}: {s:>8.4f}")
+
                 # Expand and prune beam
                 new_hypotheses = []
                 for i, hyp in enumerate(new_state.hypotheses):
@@ -682,6 +695,8 @@ def create_beam_search(
     device: str = "cpu",
     use_bbd: bool = True,
     bbd_conservative: bool = True,
+    sos_id: int = 1023,
+    eos_id: int = 1023,
 ) -> BlockwiseSynchronousBeamSearch:
     """Create BSBS beam search from model.
 
@@ -704,13 +719,13 @@ def create_beam_search(
     weights = {}
 
     if model.decoder is not None:
-        scorers["decoder"] = DecoderScorer(model.decoder)
+        scorers["decoder"] = DecoderScorer(model.decoder, sos_id=sos_id, eos_id=eos_id)
         weights["decoder"] = decoder_weight
 
     # CTC scoring with full forward algorithm implementation
     # Now uses batch_score_partial for top-K scoring (25x speedup!)
     if model.ctc is not None and ctc_weight > 0:
-        scorers["ctc"] = CTCPrefixScorer(model.ctc, blank_id=0, eos_id=2)
+        scorers["ctc"] = CTCPrefixScorer(model.ctc, blank_id=0, eos_id=eos_id)
         weights["ctc"] = ctc_weight
 
     # Create BSBS
@@ -720,6 +735,8 @@ def create_beam_search(
         weights=weights,
         beam_size=beam_size,
         vocab_size=model.vocab_size,
+        sos_id=sos_id,
+        eos_id=eos_id,
         device=device,
         use_bbd=use_bbd,
         bbd_conservative=bbd_conservative,
