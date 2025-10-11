@@ -69,7 +69,7 @@ def ensure_dir(f):
 
 
 # Load the espnet model with the given tag
-def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet', decoder_impl='new'):
+def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet', decoder_impl='native', fp16=False):
     """
     `tag` can be:
       - a Hugging Face repo id like "speechcatcher/..."
@@ -77,8 +77,10 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
       - a local path to a packed archive
 
     `decoder_impl` can be:
-      - 'new' (default): Use built-in Speech2TextStreaming implementation
+      - 'native' (default): Use built-in Speech2TextStreaming implementation
       - 'espnet': Use original ESPnet streaming decoder (requires espnet_streaming_decoder package)
+
+    `fp16` (bool): Use FP16 (half precision) for faster inference (only supported with native decoder)
     """
     from pathlib import Path
 
@@ -111,6 +113,10 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
             print("\nAlternatively, use the built-in decoder (default) by omitting --decoder espnet")
             sys.exit(1)
 
+        if fp16:
+            print("\nWARNING: FP16 is not supported with the ESPnet decoder.")
+            print("Continuing with FP32 (full precision).")
+
         if not quiet:
             print("Using original ESPnet streaming decoder implementation")
 
@@ -129,16 +135,25 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
             device=device,
         )
     else:
-        # Use new built-in implementation (default)
+        # Use native built-in implementation (default)
+        # FP16 is only practical on CUDA
+        if fp16 and device == 'cpu':
+            print("\nWARNING: FP16 on CPU is extremely slow and not recommended.")
+            print("FP16 will be disabled. Use --device cuda for FP16 acceleration.")
+            fp16 = False
+
+        dtype = "float16" if fp16 else "float32"
+
         if not quiet:
-            print("Using built-in streaming decoder implementation")
+            precision_str = "FP16" if fp16 else "FP32"
+            print(f"Using built-in streaming decoder implementation ({precision_str})")
 
         return Speech2TextStreaming(
             model_dir=model_dir,
             beam_size=beam_size,
             ctc_weight=0.3,  # From model config (decoder_weight=0.7, ctc_weight=0.3)
             device=device,
-            dtype="float32"
+            dtype=dtype
         )
 
 # Convert input file to 16 kHz mono, use stdout to capture the output in-memory
@@ -679,8 +694,10 @@ def main():
     parser.add_argument('--lang', dest='language', default='',
                         help='Explicitly set language, default is empty = deduct language from model tag', type=str)
     parser.add_argument('-b', '--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=5)
-    parser.add_argument('--decoder', dest='decoder', choices=['new', 'espnet'], default='new',
-                        help='Decoder implementation: "new" (default, built-in) or "espnet" (original ESPnet streaming decoder for benchmarking)')
+    parser.add_argument('--decoder', dest='decoder', choices=['native', 'espnet'], default='native',
+                        help='Decoder implementation: "native" (default, built-in) or "espnet" (original ESPnet streaming decoder for benchmarking)')
+    parser.add_argument('--fp16', dest='fp16', action='store_true',
+                        help='Use FP16 (half precision) for faster inference. Only supported with native decoder.')
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file',
                         action='store_true')
     parser.add_argument('--no-progress', dest='no_progress', help='Show no progress bar when transcribing a media file',
@@ -733,7 +750,7 @@ def main():
     quiet = args.quiet or num_processes > 1
     progress = not args.no_progress
 
-    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress, cache_dir=args.cache_dir, decoder_impl=args.decoder)
+    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress, cache_dir=args.cache_dir, decoder_impl=args.decoder, fp16=args.fp16)
 
     args = parser.parse_args()
 
