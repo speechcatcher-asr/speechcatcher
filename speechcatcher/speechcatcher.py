@@ -69,12 +69,16 @@ def ensure_dir(f):
 
 
 # Load the espnet model with the given tag
-def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet'):
+def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet', decoder_impl='new'):
     """
     `tag` can be:
       - a Hugging Face repo id like "speechcatcher/..."
       - a direct https URL to a packed ESPnet model archive
       - a local path to a packed archive
+
+    `decoder_impl` can be:
+      - 'new' (default): Use built-in Speech2TextStreaming implementation
+      - 'espnet': Use original ESPnet streaming decoder (requires espnet_streaming_decoder package)
     """
     from pathlib import Path
 
@@ -96,13 +100,46 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
     if not quiet:
         print(f"Loading model from {model_dir}")
 
-    return Speech2TextStreaming(
-        model_dir=model_dir,
-        beam_size=beam_size,
-        ctc_weight=0.3,  # From model config (decoder_weight=0.7, ctc_weight=0.3)
-        device=device,
-        dtype="float32"
-    )
+    if decoder_impl == 'espnet':
+        # Use original ESPnet streaming decoder implementation
+        try:
+            from espnet_streaming_decoder.asr_inference_streaming import Speech2TextStreaming as ESPnetStreaming
+        except ImportError:
+            print("\nERROR: espnet_streaming_decoder package not found!")
+            print("To use the original ESPnet decoder, install it with:")
+            print("  pip3 install git+https://github.com/speechcatcher-asr/espnet_streaming_decoder")
+            print("\nAlternatively, use the built-in decoder (default) by omitting --decoder espnet")
+            sys.exit(1)
+
+        if not quiet:
+            print("Using original ESPnet streaming decoder implementation")
+
+        # Get config and model paths from info dict
+        config_path = info.get('asr_train_config') or info.get('train_config')
+        model_path = info.get('asr_model_file') or info.get('model_file')
+
+        if not config_path or not model_path:
+            raise ValueError(f"Could not find config/model paths in info: {info}")
+
+        return ESPnetStreaming(
+            asr_train_config=str(config_path),
+            asr_model_file=str(model_path),
+            beam_size=beam_size,
+            ctc_weight=0.3,
+            device=device,
+        )
+    else:
+        # Use new built-in implementation (default)
+        if not quiet:
+            print("Using built-in streaming decoder implementation")
+
+        return Speech2TextStreaming(
+            model_dir=model_dir,
+            beam_size=beam_size,
+            ctc_weight=0.3,  # From model config (decoder_weight=0.7, ctc_weight=0.3)
+            device=device,
+            dtype="float32"
+        )
 
 # Convert input file to 16 kHz mono, use stdout to capture the output in-memory
 def convert_inputfile_inmemory(filename):
@@ -642,6 +679,8 @@ def main():
     parser.add_argument('--lang', dest='language', default='',
                         help='Explicitly set language, default is empty = deduct language from model tag', type=str)
     parser.add_argument('-b', '--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=5)
+    parser.add_argument('--decoder', dest='decoder', choices=['new', 'espnet'], default='new',
+                        help='Decoder implementation: "new" (default, built-in) or "espnet" (original ESPnet streaming decoder for benchmarking)')
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file',
                         action='store_true')
     parser.add_argument('--no-progress', dest='no_progress', help='Show no progress bar when transcribing a media file',
@@ -694,7 +733,7 @@ def main():
     quiet = args.quiet or num_processes > 1
     progress = not args.no_progress
 
-    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress, cache_dir=args.cache_dir)
+    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress, cache_dir=args.cache_dir, decoder_impl=args.decoder)
 
     args = parser.parse_args()
 
