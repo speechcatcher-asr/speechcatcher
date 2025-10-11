@@ -277,22 +277,107 @@ Token 738 (▁liebe) IS in beam but scores ~4.0 worse than token 372 (▁Li).
 ### speechcatcher/beam_search/hypothesis.py
 - **Line 75**: Fix SOS default to 1023
 
+## Additional Fixes (Continued Session)
+
+### 4. CTC/Decoder Weight Fix (0.3/0.7)
+
+**Problem:** We were using `decoder=0.9, ctc=0.1` but ESPnet uses `decoder=0.7, ctc=0.3`
+
+**Fix:** Changed `ctc_weight` from 0.1 to 0.3 in speechcatcher.py (from model config)
+
+### 5. Block Timing Fix (< instead of <=)
+
+**Problem:** We decoded at chunk 4 (24 frames), ESPnet waited until chunk 5 (40 frames)
+
+**Fix:** Changed comparison from `cur_end_frame <= buffer_size` to `cur_end_frame < buffer_size`
+
+ESPnet's logic:
+```python
+if cur_end_frame < x.shape[0]:  # Strict <, not <=
+    process_block()
+```
+
+### 6. EOS Preference (THE MAJOR FIX!)
+
+**Problem:** Both decoders predict token 372 (▁Li) first, but ESPnet outputs token 738 (▁liebe)
+
+**Investigation:** ESPnet trace showed:
+```
+position 0: best hypo = ▁Li (token 372)
+position 1: Detected hyp(s) reaching EOS in this block
+            best hypo = ▁liebe (token 738 - completed!)
+```
+
+**Key insight:** ESPnet prefers COMPLETED hypotheses (with EOS) over running ones!
+
+**Implementation:**
+```python
+# After each beam step, check for completed hypotheses
+completed_hyps = [h for h in hypotheses if h.yseq[-1].item() == self.eos_id]
+
+if len(completed_hyps) > 0 and not is_final:
+    # Stop and return best completed hypothesis
+    new_state.hypotheses = sorted(completed_hyps, key=lambda h: h.score, reverse=True)
+    break
+```
+
+**Results:**
+```
+Chunk 5:
+  ESPnet: 'liebe'
+  Ours:   'liebe' ✅ MATCH!
+
+Chunk 6:
+  ESPnet: 'liebe'
+  Ours:   'liebe' ✅ MATCH!
+```
+
+### 7. CTC Index Out of Bounds Fix
+
+**Problem:** Crash on final chunk: `index 88 is out of bounds for dimension 0 with size 88`
+
+**Fix:** Clamped `start` to prevent accessing beyond array bounds:
+```python
+start = min(start, self.input_length)
+```
+
+## Final Status
+
+### ✅ What Works
+
+1. **Token vocabulary** - Correctly maps to ESPnet's modified vocabulary
+2. **SOS/EOS tokens** - Fixed to 1023 throughout
+3. **CTC/Decoder weights** - Matches ESPnet (0.3/0.7)
+4. **Block timing** - Matches ESPnet (strict < comparison)
+5. **EOS preference** - Correctly prefers completed hypotheses
+6. **Early chunk decoding** - Chunks 5-6 match ESPnet EXACTLY! 🎉
+
+### ⚠️ Remaining Issues
+
+**Final chunk (is_final=True) has problems:**
+- EOS tokens appearing in output text
+- Repetitions ("Hamburg" repeated many times)
+- Output: `"liebe<sos/eos> Liebe Mitglieder, unserer Universität Hamburg,<sos/eos> Hamburg..."`
+- Expected: `"Liebe Mitglieder unserer Universität Hamburg."`
+
+**Likely causes:**
+1. EOS filtering not working correctly for final chunks
+2. Something different about final vs streaming decoding
+3. BBD might not be handling final chunks properly
+
 ## Next Steps
 
-### Immediate: Compare Decoding Strategy
+### Immediate: Fix Final Chunk Decoding
 
-The core decoder is working correctly! Now investigate timing/scoring differences:
-
-1. **Block processing timing** - When does ESPnet start decoding vs us?
-2. **CTC prefix scoring** - Are CTC scores weighted differently?
-3. **Beam search scoring** - Compare exact scorer combination
-4. **BBD settings** - Check block_size, hop_size, look_ahead parameters
+1. **EOS filtering** - Ensure EOS tokens are excluded from final output
+2. **Repetition handling** - Investigate why "Hamburg" repeats
+3. **BBD final behavior** - Check how BBD should behave when `is_final=True`
+4. **Compare final chunk processing** - Trace ESPnet's final chunk handling
 
 ### Expected Outcome
 
-Match ESPnet's decoding strategy to produce:
+Match ESPnet's final output:
 ```
-Chunk 5: Ours='liebe' (matches ESPnet)
 Final: 'Liebe Mitglieder unserer Universität Hamburg.' ✅
 ```
 
