@@ -196,9 +196,10 @@ class CTCPrefixScorer(ScorerInterface):
                     state_T = states[0][0].shape[0]
                     if state_T != self.impl.input_length:
                         # State from previous iteration with different time dimension
-                        # For now, reset to None (conservative approach)
-                        # TODO: Implement proper state extension
-                        logger.debug(f"CTC: State time dimension {state_T} != current input_length {self.impl.input_length}, resetting")
+                        # This should NOT happen if extend_state() works correctly!
+                        logger.warning(f"CTC batch_score: State time dimension {state_T} != current input_length {self.impl.input_length}")
+                        logger.warning(f"CTC batch_score: This indicates extend_state() was not called or failed!")
+                        logger.warning(f"CTC batch_score: Resetting state (will lose context)")
                         merged_state = None
                     else:
                         merged_state = (
@@ -290,9 +291,10 @@ class CTCPrefixScorer(ScorerInterface):
                     state_T = states[0][0].shape[0]
                     if state_T != self.impl.input_length:
                         # State from previous iteration with different time dimension
-                        # For now, reset to None (conservative approach)
-                        # TODO: Implement proper state extension
-                        logger.debug(f"CTC: State time dimension {state_T} != current input_length {self.impl.input_length}, resetting")
+                        # This should NOT happen if extend_state() works correctly!
+                        logger.warning(f"CTC batch_score: State time dimension {state_T} != current input_length {self.impl.input_length}")
+                        logger.warning(f"CTC batch_score: This indicates extend_state() was not called or failed!")
+                        logger.warning(f"CTC batch_score: Resetting state (will lose context)")
                         merged_state = None
                     else:
                         merged_state = (
@@ -359,10 +361,23 @@ class CTCPrefixScorer(ScorerInterface):
         Returns:
             Extended state with r covering new time length
         """
+        import logging
+        logger = logging.getLogger(__name__)
+
         if self.impl is None or state is None:
             return state
 
-        return self.impl.extend_state(state)
+        # Log state shape before extension
+        if len(state) >= 1 and hasattr(state[0], 'shape'):
+            logger.debug(f"CTC extend_state: Extending state from T={state[0].shape[0]} to T={self.impl.input_length}")
+
+        extended = self.impl.extend_state(state)
+
+        # Log state shape after extension
+        if extended and len(extended) >= 1 and hasattr(extended[0], 'shape'):
+            logger.debug(f"CTC extend_state: Extended state to T={extended[0].shape[0]}")
+
+        return extended
 
     def select_state(self, state: Optional[Tuple], i: int, new_id: int = None) -> Optional[Tuple]:
         """Select state for specific hypothesis and token.

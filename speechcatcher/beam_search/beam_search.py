@@ -324,21 +324,32 @@ class BlockwiseSynchronousBeamSearch:
             Updated hypotheses with extended states
         """
         # Extend probability matrices for scorers that support streaming
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.info(f"extend_scorers: Extending {len(hypotheses)} hypotheses with encoder_out shape {encoder_out.shape}")
+
         for scorer_name, scorer in self.scorers.items():
             if hasattr(scorer, "extend_prob"):
                 # Extend CTC probability matrix with new encoder output
+                print(f"[DEBUG] extend_scorers: Calling {scorer_name}.extend_prob() with shape {encoder_out.shape}")
                 scorer.extend_prob(encoder_out)
+                print(f"[DEBUG] extend_scorers: {scorer_name}.extend_prob() complete")
 
         # Extend hypothesis states to match new probability matrix size
         updated_hypotheses = []
-        for hyp in hypotheses:
+        for idx, hyp in enumerate(hypotheses):
             # Copy hypothesis and update states
             new_states = {}
             for scorer_name in hyp.states:
                 scorer = self.scorers.get(scorer_name)
                 if scorer and hasattr(scorer, "extend_state"):
                     # Extend this scorer's state
-                    new_states[scorer_name] = scorer.extend_state(hyp.states[scorer_name])
+                    old_state = hyp.states[scorer_name]
+                    if old_state and len(old_state) >= 1 and hasattr(old_state[0], 'shape'):
+                        print(f"[DEBUG] extend_scorers: hyp {idx} {scorer_name} state T={old_state[0].shape[0]} before extend")
+                    new_states[scorer_name] = scorer.extend_state(old_state)
+                    if new_states[scorer_name] and len(new_states[scorer_name]) >= 1 and hasattr(new_states[scorer_name][0], 'shape'):
+                        print(f"[DEBUG] extend_scorers: hyp {idx} {scorer_name} state T={new_states[scorer_name][0].shape[0]} after extend")
                 else:
                     # Keep state unchanged
                     new_states[scorer_name] = hyp.states[scorer_name]
@@ -379,15 +390,18 @@ class BlockwiseSynchronousBeamSearch:
             last_token = hyp.yseq[-1].item()
 
             # Special case: SOS == EOS (1023)
-            # [SOS, EOS] is valid - it means "nothing to output yet"
-            # Only detect as repetition if sequence has more than just SOS+EOS
-            if last_token == self.sos_id and len(hyp.yseq) == 2:
-                logger.debug(f"BBD: Skipping [SOS, EOS] detection (valid empty sequence)")
+            # [SOS, ..., EOS] is valid - EOS at the end is expected!
+            # Only detect ACTUAL repetition (same token appearing in middle of sequence)
+            # Skip SOS/EOS tokens in repetition check
+            if last_token == self.sos_id or last_token == self.eos_id:
+                logger.debug(f"BBD: Skipping SOS/EOS token {last_token} in repetition detection")
                 continue
 
-            # Check if last token appears in previous tokens (repetition)
-            prev_tokens = hyp.yseq[:-1].tolist()
-            if last_token in prev_tokens:
+            # Check if last token appears in MIDDLE of sequence (not start/end)
+            # Exclude first token (SOS) from repetition check
+            middle_tokens = hyp.yseq[1:-1].tolist()
+            if last_token in middle_tokens:
+                print(f"[DEBUG] BBD: Detected repetition - token {last_token} appears in middle of sequence {hyp.yseq.tolist()}")
                 logger.debug(f"BBD: Detected repetition - token {last_token} in {hyp.yseq.tolist()}")
                 return True
 
@@ -547,7 +561,9 @@ class BlockwiseSynchronousBeamSearch:
 
         # Extend scorers with new encoder output (for streaming CTC support)
         # This calls extend_prob() on scorers and extend_state() on hypotheses
+        print(f"[DEBUG] _decode_one_block: Calling extend_scorers with {len(prev_state.hypotheses)} hypotheses")
         extended_hypotheses = self.extend_scorers(encoder_out, prev_state.hypotheses)
+        print(f"[DEBUG] _decode_one_block: Extended to {len(extended_hypotheses)} hypotheses")
 
         # Update state with extended hypotheses
         # Note: We don't update encoder_states here - that's done in process_block
@@ -572,6 +588,7 @@ class BlockwiseSynchronousBeamSearch:
             max_decode_steps = min(encoder_out.size(1) * 2, 100)  # Cap at 100 tokens per block
 
             for step in range(max_decode_steps):
+                print(f"[DEBUG] _decode_one_block: Step {step}/{max_decode_steps}, is_final={is_final}")
                 new_state.output_index += 1
 
                 # Score current hypotheses and get new states
@@ -628,12 +645,12 @@ class BlockwiseSynchronousBeamSearch:
 
                 if len(completed_hyps) > 0:
                     if not is_final:
-                        # For streaming: stop when ANY hypothesis reaches EOS
+                        # For streaming: DON'T break! Let BBD handle termination
                         # ESPnet keeps ALL hypotheses (both completed and running) in the beam
-                        # The output layer will filter to only completed ones for output
-                        logger.info(f"Detected {len(completed_hyps)} hyp(s) reaching EOS in this block.")
-                        # Keep all hypotheses (both completed and running) for next iteration
-                        break
+                        # Low-scoring beams often predict EOS early, but we should continue
+                        print(f"[DEBUG] EOS: Detected {len(completed_hyps)} hyp(s) reaching EOS at step {step}, continuing...")
+                        logger.debug(f"Detected {len(completed_hyps)} hyp(s) reaching EOS, continuing decoding")
+                        # DON'T break - let BBD or max steps handle termination
                     else:
                         # For final: stop only when BEST hypothesis reaches EOS
                         # This allows other beams to continue if the best hasn't finished yet
@@ -647,9 +664,14 @@ class BlockwiseSynchronousBeamSearch:
                 # BBD: Check for repetition AFTER beam expansion
                 # Matches ESPnet's approach (batch_beam_search_online.py:209-218)
                 if self.use_bbd and not is_final:
+                    print(f"[DEBUG] BBD: Checking repetition at step {step}, is_final={is_final}")
                     has_repetition = self.detect_repetition_or_eos(new_state.hypotheses)
+                    print(f"[DEBUG] BBD: has_repetition={has_repetition}")
 
                     if has_repetition:
+                        print(f"[DEBUG] BBD: Repetition detected at step {step}, stopping block")
+                        for hyp in new_state.hypotheses:
+                            print(f"[DEBUG] BBD: Hypothesis: {hyp.yseq.tolist()}")
                         logger.debug(f"BBD: Repetition detected at step {step}, stopping block")
 
                         # Rollback to previous hypotheses (1 step, matching ESPnet)
