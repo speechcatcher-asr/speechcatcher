@@ -73,7 +73,7 @@ class BeamSearch:
         hypotheses: List[Hypothesis],
         encoder_out: torch.Tensor,
         pre_beam_size: int = 40,
-    ) -> Tuple[torch.Tensor, Dict[str, List]]:
+    ) -> Tuple[torch.Tensor, Dict[str, List], Dict[str, torch.Tensor]]:
         """Score all hypotheses for next token prediction with two-pass strategy.
 
         TWO-PASS SCORING STRATEGY (following ESPnet):
@@ -93,9 +93,10 @@ class BeamSearch:
             Tuple of:
                 - Combined scores (batch, vocab_size)
                 - Dict of new states per scorer {scorer_name: [state_0, state_1, ...]}
+                - Dict of individual scorer scores {scorer_name: (batch, vocab_size)}
         """
         if not hypotheses:
-            return torch.zeros(0, self.vocab_size, device=self.device), {}
+            return torch.zeros(0, self.vocab_size, device=self.device), {}, {}
 
         batch_size = len(hypotheses)
 
@@ -113,6 +114,9 @@ class BeamSearch:
 
         # Collect new states from all scorers
         all_new_states = {}
+
+        # Collect individual scorer scores (unweighted)
+        individual_scores = {}
 
         # PASS 1: Score with FULL scorers (e.g., decoder)
         # These scorers must score entire vocabulary to select top-K candidates
@@ -133,6 +137,9 @@ class BeamSearch:
 
                 # Store states
                 all_new_states[scorer_name] = new_states
+
+                # Store individual scores (unweighted)
+                individual_scores[scorer_name] = scores
 
                 # Add to both combined and full_scorer scores
                 combined_scores += weight * scores
@@ -169,10 +176,13 @@ class BeamSearch:
                 # Store states
                 all_new_states[scorer_name] = new_states
 
+                # Store individual scores (unweighted)
+                individual_scores[scorer_name] = scores
+
                 # Add weighted scores (already full vocab size)
                 combined_scores += weight * scores
 
-        return combined_scores, all_new_states
+        return combined_scores, all_new_states, individual_scores
 
     def search(
         self,
@@ -194,7 +204,7 @@ class BeamSearch:
         # Iterative decoding
         for step in range(self.max_length):
             # Score all hypotheses and get new states
-            scores, new_states_dict = self.batch_score_hypotheses(beam, encoder_out)  # (beam, vocab)
+            scores, new_states_dict, individual_scores = self.batch_score_hypotheses(beam, encoder_out)  # (beam, vocab)
 
             # Expand hypotheses
             new_hypotheses = []
@@ -215,10 +225,17 @@ class BeamSearch:
                         else:
                             new_states_for_hyp[scorer_name] = state
 
+                    # Update individual scores dict with incremental scores for this token
+                    new_scores = hyp.scores.copy()
+                    for scorer_name, scorer_scores in individual_scores.items():
+                        # Add incremental score for this specific token
+                        token_score = scorer_scores[i, token].item()
+                        new_scores[scorer_name] = new_scores.get(scorer_name, 0.0) + token_score
+
                     new_hyp = Hypothesis(
                         yseq=append_token(hyp.yseq, token),
                         score=hyp.score + score,
-                        scores=hyp.scores.copy(),  # TODO: Update individual scores
+                        scores=new_scores,  # Updated with individual scorer contributions
                         states=new_states_for_hyp,  # Properly selected states!
                         xpos=hyp.xpos,  # Keep same xpos for now
                     )
@@ -686,7 +703,7 @@ class BlockwiseSynchronousBeamSearch:
                 new_state.output_index += 1
 
                 # Score current hypotheses and get new states
-                scores, new_states_dict = self.beam_search.batch_score_hypotheses(
+                scores, new_states_dict, individual_scores = self.beam_search.batch_score_hypotheses(
                     new_state.hypotheses, encoder_out
                 )
 
@@ -718,13 +735,20 @@ class BlockwiseSynchronousBeamSearch:
                             else:
                                 new_states_for_hyp[scorer_name] = state
 
+                        # Update individual scores dict with incremental scores for this token
+                        new_scores = hyp.scores.copy()
+                        for scorer_name, scorer_scores in individual_scores.items():
+                            # Add incremental score for this specific token
+                            token_score = scorer_scores[i, token].item()
+                            new_scores[scorer_name] = new_scores.get(scorer_name, 0.0) + token_score
+
                         # Track encoder position
                         current_encoder_pos = encoder_out.size(1) - 1  # Last frame index
 
                         new_hyp = Hypothesis(
                             yseq=append_token(hyp.yseq, token),
                             score=hyp.score + score,
-                            scores=hyp.scores.copy(),
+                            scores=new_scores,  # Updated with individual scorer contributions
                             states=new_states_for_hyp,
                             xpos=append_position(hyp.xpos, current_encoder_pos),
                         )
