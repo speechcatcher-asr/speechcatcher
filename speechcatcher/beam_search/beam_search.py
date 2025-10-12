@@ -43,7 +43,7 @@ class BeamSearch:
         scorers: Dict[str, ScorerInterface],
         weights: Dict[str, float],
         beam_size: int = 10,
-        vocab_size: int = 1000,
+        vocab_size: int = 1024,
         sos_id: int = 1023,
         eos_id: int = 1023,
         max_length: int = 500,
@@ -51,6 +51,12 @@ class BeamSearch:
         use_bbd: bool = True,
         bbd_conservative: bool = True,
     ):
+        """Initialize beam search.
+
+        Note: sos_id and eos_id defaults assume vocab_size=1024.
+        Use create_beam_search() factory function which automatically
+        calculates these from vocab_size.
+        """
         self.scorers = scorers
         self.weights = weights
         self.beam_size = beam_size
@@ -256,7 +262,7 @@ class BlockwiseSynchronousBeamSearch:
         scorers: Dict[str, ScorerInterface],
         weights: Dict[str, float],
         beam_size: int = 10,
-        vocab_size: int = 1000,
+        vocab_size: int = 1024,
         sos_id: int = 1023,
         eos_id: int = 1023,
         block_size: int = 40,
@@ -268,6 +274,12 @@ class BlockwiseSynchronousBeamSearch:
         use_bbd: bool = True,
         bbd_conservative: bool = True,
     ):
+        """Initialize BSBS decoder.
+
+        Note: sos_id and eos_id defaults assume vocab_size=1024.
+        Use create_beam_search() factory function which automatically
+        calculates these from vocab_size.
+        """
         self.encoder = encoder
         self.scorers = scorers
         self.weights = weights
@@ -847,8 +859,8 @@ def create_beam_search(
     device: str = "cpu",
     use_bbd: bool = True,
     bbd_conservative: bool = True,
-    sos_id: int = 1023,
-    eos_id: int = 1023,
+    sos_id: Optional[int] = None,
+    eos_id: Optional[int] = None,
 ) -> BlockwiseSynchronousBeamSearch:
     """Create BSBS beam search from model.
 
@@ -860,11 +872,21 @@ def create_beam_search(
         device: Device to run on
         use_bbd: Use Block Boundary Detection (BBD) for streaming
         bbd_conservative: Use conservative BBD (rollback 2 steps vs 1)
+        sos_id: Start-of-sequence token ID (default: vocab_size - 1)
+        eos_id: End-of-sequence token ID (default: vocab_size - 1)
 
     Returns:
         BlockwiseSynchronousBeamSearch instance
     """
     from speechcatcher.beam_search.scorers import CTCPrefixScorer, DecoderScorer
+
+    # Calculate token IDs from vocab_size if not provided
+    # ESPnet token list structure: [<blank>, SP[0], SP[3..N], <sos/eos>]
+    # So <sos/eos> is always at position vocab_size - 1
+    if sos_id is None:
+        sos_id = model.vocab_size - 1
+    if eos_id is None:
+        eos_id = model.vocab_size - 1
 
     # Create scorers
     scorers = {}
