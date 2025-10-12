@@ -1,10 +1,10 @@
 {
-    "complete_text": "Liebe Mitglieder, unsere Universit\u00e4t Hamburg. Die Vergangenheit\n",
+    "complete_text": "Liebe Mitglie\n",
     "paragraphs": [
         {
             "start": 0,
             "end": 20.0106875,
-            "text": "Liebe Mitglieder, unsere Universit\u00e4t Hamburg. Die Vergangenheit",
+            "text": "Liebe Mitglie",
             "tokens": [
                 "\u2581Li",
                 "e",
@@ -12,27 +12,7 @@
                 "\u2581Mit",
                 "g",
                 "li",
-                "e",
-                "der",
-                ",",
-                "\u2581unsere",
-                "\u2581U",
-                "ni",
-                "ver",
-                "s",
-                "it\u00e4t",
-                "\u2581Ha",
-                "m",
-                "b",
-                "ur",
-                "g",
-                ".",
-                "\u2581Die",
-                "\u2581Ver",
-                "gang",
-                "en",
-                "heit",
-                "\u2581"
+                "e"
             ],
             "token_timestamps": [
                 0.0,
@@ -41,27 +21,7 @@
                 1.25,
                 1.6666666666666667,
                 2.0833333333333335,
-                2.5,
-                2.9166666666666665,
-                3.3333333333333335,
-                3.75,
-                4.166666666666667,
-                4.583333333333333,
-                5.0,
-                5.416666666666667,
-                5.833333333333333,
-                6.25,
-                6.666666666666667,
-                7.083333333333333,
-                7.5,
-                7.916666666666667,
-                8.333333333333334,
-                8.75,
-                9.166666666666666,
-                9.583333333333334,
-                10.0,
-                10.416666666666666,
-                10.833333333333334
+                2.5
             ]
         }
     ]

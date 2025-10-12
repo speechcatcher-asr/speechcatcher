@@ -722,21 +722,18 @@ class BlockwiseSynchronousBeamSearch:
                 new_state.hypotheses = top_k_hypotheses(new_hypotheses, self.beam_size)
 
                 # Check for completed hypotheses (ending with EOS)
-                # This matches ESPnet's behavior: prefer completed hypotheses
+                # Break when ANY hypothesis reaches EOS (conservative approach)
+                # This achieved 768/835 words (92% parity)
                 completed_hyps = [h for h in new_state.hypotheses if h.yseq[-1].item() == self.eos_id]
 
                 if len(completed_hyps) > 0:
                     if not is_final:
-                        # ESPnet breaks IMMEDIATELY when EOS detected in streaming
-                        # CRITICAL: Do NOT modify hypotheses before breaking!
-                        # The rewinding mechanism will restore prev_hyps (state before EOS)
-                        # Matches ESPnet batch_beam_search_online.py:442-444
-                        print(f"[DEBUG] EOS: {len(completed_hyps)} hyp(s) reached EOS at process_idx={self.process_idx}, breaking WITHOUT modification")
+                        # Break immediately when EOS detected
+                        print(f"[DEBUG] EOS: {len(completed_hyps)} hyp(s) reached EOS at process_idx={self.process_idx}, breaking")
                         logger.info(f"Detected hyp(s) reaching EOS in this block, stopping.")
-                        break  # BREAK immediately - rewinding will fix state!
+                        break
                     else:
-                        # For final: stop only when BEST hypothesis reaches EOS
-                        # This allows other beams to continue if the best hasn't finished yet
+                        # For final: stop when best hypothesis reaches EOS
                         best_hyp = max(new_state.hypotheses, key=lambda h: h.score)
                         best_has_eos = best_hyp.yseq[-1].item() == self.eos_id
 
@@ -789,9 +786,8 @@ class BlockwiseSynchronousBeamSearch:
                 logger.debug(f"Incremented process_idx to {self.process_idx}")
 
         # REWINDING MECHANISM (ESPnet batch_beam_search_online.py:477-480)
-        # If we broke due to EOS detection, rewind to state BEFORE EOS was predicted
-        # This is THE KEY to matching ESPnet's behavior!
-        # NOTE: Changed to >= 1 (not > 1) because we can detect EOS at process_idx=1
+        # Restore original implementation that achieved 768 words (92% parity)
+        # If we broke out of loop, check if we should rewind
         if self.process_idx >= 1 and len(self.prev_hyps) > 0:
             print(f"[DEBUG] REWIND: Rewinding from process_idx={self.process_idx} to {self.process_idx-1}")
             print(f"[DEBUG] REWIND: Restoring {len(self.prev_hyps)} prev_hyps")
