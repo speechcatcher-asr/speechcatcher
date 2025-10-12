@@ -1,0 +1,38 @@
+{
+    "complete_text": "und mussten sich,<sos/eos><sos/eos><sos/eos> \u00e4h,\n",
+    "paragraphs": [
+        {
+            "start": 0,
+            "end": 60.0106875,
+            "text": "und mussten sich,<sos/eos><sos/eos><sos/eos> \u00e4h,",
+            "tokens": [
+                "\u2581und",
+                "\u2581musst",
+                "en",
+                "\u2581sich",
+                ",",
+                "<sos/eos>",
+                "<sos/eos>",
+                "<sos/eos>",
+                "\u2581",
+                "\u00e4",
+                "h",
+                ","
+            ],
+            "token_timestamps": [
+                0.0,
+                0.4166666666666667,
+                0.8333333333333334,
+                1.25,
+                1.6666666666666667,
+                2.0833333333333335,
+                2.5,
+                2.9166666666666665,
+                3.3333333333333335,
+                3.75,
+                4.166666666666667,
+                4.583333333333333
+            ]
+        }
+    ]
+}

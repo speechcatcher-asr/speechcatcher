@@ -448,15 +448,17 @@ class Speech2TextStreaming:
 
         # Process block with features (not raw audio)
         # Use automatic mixed precision (autocast) if FP16 is enabled
+        # NOTE: process_block now uses GLOBAL state (self.running_hyps)
+        # We still get beam_state back for compatibility, but it's just a view
         with torch.no_grad():
             if self.use_amp:
                 with torch.cuda.amp.autocast():
                     self.beam_state = self.beam_search.process_block(
-                        speech, speech_lengths, self.beam_state, is_final
+                        speech, speech_lengths, is_final
                     )
             else:
                 self.beam_state = self.beam_search.process_block(
-                    speech, speech_lengths, self.beam_state, is_final
+                    speech, speech_lengths, is_final
                 )
 
         # Convert hypotheses to output format

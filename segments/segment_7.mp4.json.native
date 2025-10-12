@@ -1,0 +1,26 @@
+{
+    "complete_text": "wenn um uns herum,\n",
+    "paragraphs": [
+        {
+            "start": 0,
+            "end": 65.0133125,
+            "text": "wenn um uns herum,",
+            "tokens": [
+                "\u2581wenn",
+                "\u2581um",
+                "\u2581uns",
+                "\u2581her",
+                "um",
+                ","
+            ],
+            "token_timestamps": [
+                0.0,
+                0.4166666666666667,
+                0.8333333333333334,
+                1.25,
+                1.6666666666666667,
+                2.0833333333333335
+            ]
+        }
+    ]
+}

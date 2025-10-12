@@ -69,7 +69,7 @@ def ensure_dir(f):
 
 
 # Load the espnet model with the given tag
-def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet', decoder_impl='native', fp16=False):
+def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet', decoder_impl='native', fp16=False, use_bbd=False):
     """
     `tag` can be:
       - a Hugging Face repo id like "speechcatcher/..."
@@ -154,7 +154,8 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
             beam_size=beam_size,
             ctc_weight=0.3,  # From model config (decoder_weight=0.7, ctc_weight=0.3)
             device=device,
-            dtype=dtype
+            dtype=dtype,
+            use_bbd=use_bbd,
         )
 
 # Convert input file to 16 kHz mono, use stdout to capture the output in-memory
@@ -286,7 +287,7 @@ def linear_interpolate_pos(input_list_in):
 # Using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
 # progress mode: output transcription progress
-def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4):
+def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4, chunk_length=8192):
     ensure_dir('.tmp/')
     wavfile_path = '.tmp/' + hashlib.sha1(media_path.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
@@ -304,7 +305,7 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
     # - First block needs: (40 - 16) = 24 encoder frames
     # - 24 encoder frames × 4 (subsampling) × 160 (STFT hop) = 15,360 samples minimum
     # - Full block: 40 × 4 × 160 = 25,600 samples (1.6s at 16kHz)
-    chunk_length = 25600  # Was 8192
+    # Using passed chunk_length parameter (default 8192, configurable via --chunk-length)
     complete_text, auxiliary_info = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet)
 
     # Automatically generate output .txt name from media_path if it isnt set
@@ -699,6 +700,9 @@ def main():
                         help='Decoder implementation: "native" (default, built-in) or "espnet" (original ESPnet streaming decoder for benchmarking)')
     parser.add_argument('--fp16', dest='fp16', action='store_true',
                         help='Use FP16 (half precision) for faster inference. Only supported with native decoder.')
+    parser.add_argument('--disable-bbd', dest='disable_bbd', action='store_true',
+                        help='Disable Block Boundary Detection (BBD). Only applies to native decoder. '
+                             'BBD prevents repetition but may cause early stopping with subword tokenization (default: enabled to match ESPnet).')
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file',
                         action='store_true')
     parser.add_argument('--no-progress', dest='no_progress', help='Show no progress bar when transcribing a media file',
@@ -715,6 +719,9 @@ def main():
                         help='Set number of processes used for processing long audio files in parallel'
                              ' (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() '
                              'divided by two.',
+                        type=int)
+    parser.add_argument('--chunk-length', dest='chunk_length', default=8192,
+                        help='Number of raw audio samples per chunk for streaming processing (default: 8192)',
                         type=int)
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
@@ -751,7 +758,7 @@ def main():
     quiet = args.quiet or num_processes > 1
     progress = not args.no_progress
 
-    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress, cache_dir=args.cache_dir, decoder_impl=args.decoder, fp16=args.fp16)
+    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress, cache_dir=args.cache_dir, decoder_impl=args.decoder, fp16=args.fp16, use_bbd=not args.disable_bbd)
 
     args = parser.parse_args()
 
@@ -764,7 +771,7 @@ def main():
         if not (args.inputfile.startswith('http://') or args.inputfile.startswith('https://')) and not os.path.isfile(args.inputfile):
             print(f"Error: Input file '{args.inputfile}' does not exist or is not a valid file.")
             sys.exit(-1)
-        recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes)
+        recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes, chunk_length=args.chunk_length)
     else:
         parser.print_help()
 

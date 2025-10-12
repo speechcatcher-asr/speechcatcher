@@ -479,30 +479,37 @@ class BlockwiseSynchronousBeamSearch:
         self,
         features: torch.Tensor,
         feature_lens: torch.Tensor,
-        prev_state: Optional[BeamState] = None,
         is_final: bool = False,
     ) -> BeamState:
         """Process features with encoder buffering and block extraction.
 
-        This implements the critical buffering mechanism from ESPnet's
-        batch_beam_search_online.py that we were missing!
+        NOW USES GLOBAL STATE! Matches ESPnet's batch_beam_search_online.py architecture.
+        - Uses self.running_hyps instead of prev_state parameter
+        - Hypotheses persist across ALL blocks (not reset between blocks)
+        - Enables proper rewinding mechanism when EOS detected
 
         Args:
             features: Input features (1, time, feat_dim)
             feature_lens: Feature lengths (1,)
-            prev_state: Previous beam state
             is_final: Whether this is the final block
 
         Returns:
-            Updated beam state
+            Updated beam state (for backward compatibility with Speech2TextStreaming)
         """
-        # Initialize state if needed
-        if prev_state is None:
-            prev_state = BeamState(
-                hypotheses=[create_initial_hypothesis(self.sos_id, device=self.device)],
-                encoder_states=None,
-                processed_frames=0,
-            )
+        # Initialize global state on first call
+        # Matches ESPnet: if self.running_hyps is None, initialize
+        if self.running_hyps is None:
+            self.running_hyps = [create_initial_hypothesis(self.sos_id, device=self.device)]
+            logger.debug("Initialized self.running_hyps with initial hypothesis")
+
+        # Create prev_state from global state for encoder states tracking
+        # NOTE: This is temporary during refactoring - eventually encoder states
+        # should also be global, but that's a bigger change
+        prev_state = BeamState(
+            hypotheses=self.running_hyps,  # Use global hypotheses!
+            encoder_states=getattr(self, '_encoder_states', None),  # Temp storage
+            processed_frames=0,  # Not used anymore
+        )
 
         # Step 1: Encode features
         # CRITICAL: Use infer_mode=True for streaming!
@@ -597,16 +604,24 @@ class BlockwiseSynchronousBeamSearch:
                 logger.debug(f"Waiting for more frames (need {cur_end_frame}, have {self.encoder_buffer.shape[1] if self.encoder_buffer is not None else 0})")
                 break
 
-        # Update encoder states for next chunk
-        # CRITICAL: Always update encoder_states, even if ret is None!
-        # The encoder needs states to be passed for streaming to work.
+        # Update GLOBAL state from processing results
+        # CRITICAL: This is where hypotheses persist across blocks!
         if ret is not None:
-            ret.encoder_states = encoder_states
-            return ret
-        else:
-            # No blocks processed yet, but MUST preserve encoder states
-            prev_state.encoder_states = encoder_states
-            return prev_state
+            # Update global hypotheses from block processing
+            self.running_hyps = ret.hypotheses
+            logger.debug(f"Updated self.running_hyps to {len(self.running_hyps)} hypotheses")
+
+        # Store encoder states globally for next call
+        self._encoder_states = encoder_states
+
+        # Return BeamState for backward compatibility with Speech2TextStreaming
+        # NOTE: This return value is less important now that state is global,
+        # but Speech2TextStreaming still expects it
+        return BeamState(
+            hypotheses=self.running_hyps,
+            encoder_states=self._encoder_states,
+            processed_frames=0,  # Not tracked anymore
+        )
 
     def _decode_one_block(
         self,

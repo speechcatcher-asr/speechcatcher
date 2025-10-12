@@ -1,23 +1,31 @@
 {
-    "complete_text": ",,.</s>.\n",
+    "complete_text": "liebe Liebe Mitglieder\n",
     "paragraphs": [
         {
             "start": 0,
             "end": 40.0,
-            "text": ",,.</s>.",
+            "text": "liebe Liebe Mitglieder",
             "tokens": [
-                ",",
-                ",",
-                ".",
-                "</s>",
-                "."
+                "\u2581liebe",
+                "\u2581Li",
+                "e",
+                "be",
+                "\u2581Mit",
+                "g",
+                "li",
+                "e",
+                "der"
             ],
             "token_timestamps": [
                 0.0,
                 0.4166666666666667,
                 0.8333333333333334,
                 1.25,
-                1.6666666666666667
+                1.6666666666666667,
+                2.0833333333333335,
+                2.5,
+                2.9166666666666665,
+                3.3333333333333335
             ]
         }
     ]
