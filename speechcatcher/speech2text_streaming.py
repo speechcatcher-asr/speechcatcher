@@ -47,6 +47,7 @@ class Speech2TextStreaming:
         ctc_weight: float = 0.3,
         device: str = "cpu",
         dtype: str = "float32",
+        use_bbd: bool = False,
     ):
         self.model_dir = Path(model_dir)
         self.beam_size = beam_size
@@ -54,6 +55,7 @@ class Speech2TextStreaming:
         self.device = device
         self.dtype = getattr(torch, dtype)
         self.use_amp = (dtype == "float16" and device.startswith("cuda"))
+        self.use_bbd = use_bbd
 
         # Load model
         logger.info(f"Loading model from {self.model_dir}")
@@ -137,13 +139,14 @@ class Speech2TextStreaming:
             self.hop_length = 160  # Default
 
         # Create beam search
-        logger.info(f"Creating beam search with beam_size={beam_size}")
+        logger.info(f"Creating beam search with beam_size={beam_size}, use_bbd={use_bbd}")
         self.beam_search = create_beam_search(
             model=self.model,
             beam_size=beam_size,
             ctc_weight=ctc_weight,
             decoder_weight=1.0 - ctc_weight,
             device=device,
+            use_bbd=use_bbd,
         )
 
         # Streaming state
@@ -252,10 +255,10 @@ class Speech2TextStreaming:
         self.processed_frames = 0
         self.frontend_states = None  # {"waveform_buffer": tensor}
 
-        # Reset encoder buffer and block counter in beam search
-        if hasattr(self.beam_search, 'encoder_buffer'):
-            self.beam_search.encoder_buffer = None
-            self.beam_search.processed_block = 0
+        # Reset beam search state (encoder buffer, processed blocks, etc.)
+        # This calls BlockwiseSynchronousBeamSearch.reset()
+        if hasattr(self.beam_search, 'reset'):
+            self.beam_search.reset()
 
         logger.debug("Streaming state reset")
 
@@ -472,7 +475,9 @@ class Speech2TextStreaming:
         results = []
         for hyp in output_hyps:
             # DEBUG: Show what we're outputting
-            logger.debug(f"Output: output_index={self.beam_state.output_index}, hyp.yseq={hyp.yseq.tolist()[:20]}")
+            logger.debug(f"Output: output_index={self.beam_state.output_index}, hyp.yseq length={len(hyp.yseq)}, first 30 tokens={hyp.yseq.tolist()[:30]}")
+            if is_final and len(hyp.yseq) > 50:
+                print(f"[DEBUG] Final hypothesis has {len(hyp.yseq)} tokens! First 50: {hyp.yseq.tolist()[:50]}")
 
             # Extract committed tokens only (up to output_index)
             # yseq structure: [SOS, t1, t2, ..., tn, (EOS if final)]
@@ -497,8 +502,12 @@ class Speech2TextStreaming:
                 if len(token_ids) > 0 and token_ids[-1].item() == 1023:
                     token_ids = token_ids[:-1]
 
-            # Remove blank tokens (ID=0) - original does: filter(lambda x: x != 0, token_int)
-            token_ids_filtered = [tid for tid in token_ids if tid != 0]
+            # Remove special tokens:
+            # - <blank> (ID=0): CTC blank token
+            # - <unk> (ID=1): Unknown token
+            # - <sos/eos> (ID=1023): Start/end of sentence token
+            # ESPnet filters these before converting to text
+            token_ids_filtered = [tid for tid in token_ids if tid not in [0, 1, 1023]]
 
             # Decode to text using ESPnet's token list
             # The token IDs are in ESPnet vocabulary space (with <blank> at position 0)

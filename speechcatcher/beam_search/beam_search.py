@@ -645,12 +645,22 @@ class BlockwiseSynchronousBeamSearch:
 
                 if len(completed_hyps) > 0:
                     if not is_final:
-                        # For streaming: DON'T break! Let BBD handle termination
-                        # ESPnet keeps ALL hypotheses (both completed and running) in the beam
-                        # Low-scoring beams often predict EOS early, but we should continue
-                        print(f"[DEBUG] EOS: Detected {len(completed_hyps)} hyp(s) reaching EOS at step {step}, continuing...")
-                        logger.debug(f"Detected {len(completed_hyps)} hyp(s) reaching EOS, continuing decoding")
-                        # DON'T break - let BBD or max steps handle termination
+                        # ESPnet breaks out of the decoding loop when EOS is detected in streaming
+                        # CRITICAL: We need to remove EOS hypotheses from the beam before stopping
+                        # Otherwise they contaminate the next block
+                        remaining_hyps = [h for h in new_state.hypotheses if h.yseq[-1].item() != self.eos_id]
+
+                        if len(remaining_hyps) == 0:
+                            # All hypotheses reached EOS - use the best one and stop
+                            print(f"[DEBUG] EOS: All {len(completed_hyps)} hyp(s) reached EOS at step {step}, using best")
+                            new_state.hypotheses = [max(completed_hyps, key=lambda h: h.score)]
+                        else:
+                            # Some hypotheses still active - remove EOS ones and continue next block
+                            print(f"[DEBUG] EOS: {len(completed_hyps)} hyp(s) reached EOS at step {step}, removing them, {len(remaining_hyps)} remaining")
+                            new_state.hypotheses = remaining_hyps
+
+                        logger.info(f"Detected hyp(s) reaching EOS in this block, stopping.")
+                        break  # BREAK to match ESPnet
                     else:
                         # For final: stop only when BEST hypothesis reaches EOS
                         # This allows other beams to continue if the best hasn't finished yet
