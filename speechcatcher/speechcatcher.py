@@ -108,9 +108,9 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
             from espnet_streaming_decoder.asr_inference_streaming import Speech2TextStreaming as ESPnetStreaming
         except ImportError:
             print("\nERROR: espnet_streaming_decoder package not found!")
-            print("To use the original ESPnet decoder, install it with:")
+            print("The ESPnet decoder is the default. To install it, run:")
             print("  pip3 install git+https://github.com/speechcatcher-asr/espnet_streaming_decoder")
-            print("\nAlternatively, use the built-in decoder (default) by omitting --decoder espnet")
+            print("\nAlternatively, use the experimental native decoder with: --decoder native")
             sys.exit(1)
 
         if fp16:
@@ -696,8 +696,8 @@ def main():
     parser.add_argument('--lang', dest='language', default='',
                         help='Explicitly set language, default is empty = deduct language from model tag', type=str)
     parser.add_argument('-b', '--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=5)
-    parser.add_argument('--decoder', dest='decoder', choices=['native', 'espnet'], default='native',
-                        help='Decoder implementation: "native" (default, built-in) or "espnet" (original ESPnet streaming decoder for benchmarking)')
+    parser.add_argument('--decoder', dest='decoder', choices=['native', 'espnet'], default='espnet',
+                        help='Decoder implementation: "espnet" (default) or "native" (experimental)')
     parser.add_argument('--fp16', dest='fp16', action='store_true',
                         help='Use FP16 (half precision) for faster inference. Only supported with native decoder.')
     parser.add_argument('--disable-bbd', dest='disable_bbd', action='store_true',
