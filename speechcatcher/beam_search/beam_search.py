@@ -289,6 +289,14 @@ class BlockwiseSynchronousBeamSearch:
         self.encoder_buffer = None
         self.processed_block = 0
 
+        # GLOBAL STATE TRACKING (matches ESPnet's batch_beam_search_online.py:90-99)
+        # These persist across ALL blocks throughout the entire decoding session
+        self.running_hyps = None      # Current active hypotheses (persists across blocks)
+        self.prev_hyps = []          # Previous iteration hypotheses (for rewinding on EOS)
+        self.ended_hyps = []         # Completed hypotheses (reached EOS)
+        self.process_idx = 0         # Global position in beam search loop (NOT reset between blocks!)
+        self.prev_output = None      # Previous streaming output
+
         # Internal beam search for each block with BBD
         self.beam_search = BeamSearch(
             scorers=scorers,
@@ -302,6 +310,66 @@ class BlockwiseSynchronousBeamSearch:
             use_bbd=use_bbd,
             bbd_conservative=bbd_conservative,
         )
+
+    def reset(self):
+        """Reset streaming state between utterances.
+
+        Matches ESPnet's reset() in batch_beam_search_online.py:90-99
+        Call this before processing a new audio utterance.
+        """
+        self.encoder_buffer = None
+        self.running_hyps = None
+        self.prev_hyps = []
+        self.ended_hyps = []
+        self.processed_block = 0
+        self.process_idx = 0
+        self.prev_output = None
+        logger.debug("BlockwiseSynchronousBeamSearch state reset")
+
+    def _copy_hypotheses(self, hypotheses: List[Hypothesis]) -> List[Hypothesis]:
+        """Deep copy hypotheses including all scorer states.
+
+        This is CRITICAL for rewinding mechanism. When we save prev_hyps,
+        we need a true deep copy so that subsequent modifications don't
+        affect the saved state.
+
+        Args:
+            hypotheses: List of hypotheses to copy
+
+        Returns:
+            Deep copied list of hypotheses
+        """
+        import copy
+
+        copied = []
+        for hyp in hypotheses:
+            # Deep copy states (most complex part)
+            new_states = {}
+            for scorer_name, state in hyp.states.items():
+                scorer = self.scorers.get(scorer_name)
+
+                # Try scorer-specific copy method first
+                if scorer and hasattr(scorer, 'copy_state'):
+                    new_states[scorer_name] = scorer.copy_state(state)
+                else:
+                    # Fallback: try generic deep copy
+                    try:
+                        new_states[scorer_name] = copy.deepcopy(state)
+                    except Exception as e:
+                        # Last resort: reference (risky but better than crash)
+                        logger.warning(f"Could not copy state for {scorer_name}: {e}. Using reference.")
+                        new_states[scorer_name] = state
+
+            # Create new hypothesis with copied data
+            copied.append(Hypothesis(
+                yseq=hyp.yseq.clone(),  # Clone tensor
+                score=hyp.score,  # float, immutable
+                scores=hyp.scores.copy(),  # Shallow copy dict (floats inside)
+                states=new_states,  # Deep copied states
+                xpos=hyp.xpos.clone() if hyp.xpos is not None else None,  # Clone tensor
+            ))
+
+        return copied
 
     def extend_scorers(
         self,
