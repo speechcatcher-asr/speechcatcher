@@ -727,22 +727,13 @@ class BlockwiseSynchronousBeamSearch:
 
                 if len(completed_hyps) > 0:
                     if not is_final:
-                        # ESPnet breaks out of the decoding loop when EOS is detected in streaming
-                        # CRITICAL: We need to remove EOS hypotheses from the beam before stopping
-                        # Otherwise they contaminate the next block
-                        remaining_hyps = [h for h in new_state.hypotheses if h.yseq[-1].item() != self.eos_id]
-
-                        if len(remaining_hyps) == 0:
-                            # All hypotheses reached EOS - use the best one and stop
-                            print(f"[DEBUG] EOS: All {len(completed_hyps)} hyp(s) reached EOS at process_idx={self.process_idx}, using best")
-                            new_state.hypotheses = [max(completed_hyps, key=lambda h: h.score)]
-                        else:
-                            # Some hypotheses still active - remove EOS ones and continue next block
-                            print(f"[DEBUG] EOS: {len(completed_hyps)} hyp(s) reached EOS at process_idx={self.process_idx}, removing them, {len(remaining_hyps)} remaining")
-                            new_state.hypotheses = remaining_hyps
-
+                        # ESPnet breaks IMMEDIATELY when EOS detected in streaming
+                        # CRITICAL: Do NOT modify hypotheses before breaking!
+                        # The rewinding mechanism will restore prev_hyps (state before EOS)
+                        # Matches ESPnet batch_beam_search_online.py:442-444
+                        print(f"[DEBUG] EOS: {len(completed_hyps)} hyp(s) reached EOS at process_idx={self.process_idx}, breaking WITHOUT modification")
                         logger.info(f"Detected hyp(s) reaching EOS in this block, stopping.")
-                        break  # BREAK to match ESPnet
+                        break  # BREAK immediately - rewinding will fix state!
                     else:
                         # For final: stop only when BEST hypothesis reaches EOS
                         # This allows other beams to continue if the best hasn't finished yet
@@ -784,11 +775,33 @@ class BlockwiseSynchronousBeamSearch:
                     logger.debug(f"All hypotheses ended with EOS at process_idx={self.process_idx}")
                     break
 
+                # CRITICAL: Save state for potential rewind
+                # This happens AFTER all break conditions (EOS, BBD), so if we break,
+                # prev_hyps is NOT updated and still contains the previous good state
+                # Matches ESPnet: self.prev_hyps = self.running_hyps (line 448)
+                self.prev_hyps = self._copy_hypotheses(new_state.hypotheses)
+                logger.debug(f"Saved prev_hyps ({len(self.prev_hyps)} hypotheses) after all checks")
+
                 # CRITICAL: Increment global position counter!
                 # This is what makes process_idx persist across blocks
                 # Matches ESPnet: self.process_idx += 1 (batch_beam_search_online.py:463)
                 self.process_idx += 1
                 logger.debug(f"Incremented process_idx to {self.process_idx}")
+
+        # REWINDING MECHANISM (ESPnet batch_beam_search_online.py:477-480)
+        # If we broke due to EOS detection, rewind to state BEFORE EOS was predicted
+        # This is THE KEY to matching ESPnet's behavior!
+        # NOTE: Changed to >= 1 (not > 1) because we can detect EOS at process_idx=1
+        if self.process_idx >= 1 and len(self.prev_hyps) > 0:
+            print(f"[DEBUG] REWIND: Rewinding from process_idx={self.process_idx} to {self.process_idx-1}")
+            print(f"[DEBUG] REWIND: Restoring {len(self.prev_hyps)} prev_hyps")
+            # Restore hypotheses to state before EOS was predicted
+            new_state.hypotheses = self.prev_hyps
+            # Go back one step in global position
+            self.process_idx -= 1
+            # Clear prev_hyps for next block
+            self.prev_hyps = []
+            logger.info(f"REWOUND to process_idx={self.process_idx}")
 
         return new_state
 

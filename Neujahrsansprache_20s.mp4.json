@@ -1,10 +1,10 @@
 {
-    "complete_text": "Liebe Mitglieder, unsere Universit\u00e4t Hamburg. Die Vergangenheit h\u00e4lt\n",
+    "complete_text": "Liebe Mitglieder, unsere Universit\u00e4t Hamburg. Die Vergangenheit\n",
     "paragraphs": [
         {
             "start": 0,
             "end": 20.0106875,
-            "text": "Liebe Mitglieder, unsere Universit\u00e4t Hamburg. Die Vergangenheit h\u00e4lt",
+            "text": "Liebe Mitglieder, unsere Universit\u00e4t Hamburg. Die Vergangenheit",
             "tokens": [
                 "\u2581Li",
                 "e",
@@ -32,8 +32,7 @@
                 "gang",
                 "en",
                 "heit",
-                "\u2581",
-                "h\u00e4lt"
+                "\u2581"
             ],
             "token_timestamps": [
                 0.0,
@@ -62,8 +61,7 @@
                 9.583333333333334,
                 10.0,
                 10.416666666666666,
-                10.833333333333334,
-                11.25
+                10.833333333333334
             ]
         }
     ]
