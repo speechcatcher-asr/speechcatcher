@@ -1,0 +1,45 @@
+# Large video files
+*.mp4
+
+# Test output files
+*.mp4.txt
+*.mp4.json
+*.wav
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Temporary files
+.tmp/
+tmp/
+temp/
+
+# Model files (if large)
+*.pt
+*.pth
+*.bin
+*.onnx
+
+# Logs
+*.log
