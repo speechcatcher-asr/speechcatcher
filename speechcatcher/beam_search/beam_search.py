@@ -661,17 +661,16 @@ class BlockwiseSynchronousBeamSearch:
 
         # Perform beam search if we have encoder output
         # Run decoding steps with BBD (Block Boundary Detection)
+        # CRITICAL: Use GLOBAL process_idx that persists across blocks!
+        # This matches ESPnet: while self.process_idx < maxlen (batch_beam_search_online.py:395)
         if encoder_out.size(1) > 0:
             # Track hypotheses from previous step for BBD rollback
             prev_step_hypotheses = new_state.hypotheses
 
-            # Decode until BBD detects block boundary or max length
-            # Conservative estimate: ~2 tokens per encoder frame (max)
-            # This prevents decoding beyond what CTC can support
-            max_decode_steps = min(encoder_out.size(1) * 2, 100)  # Cap at 100 tokens per block
-
-            for step in range(max_decode_steps):
-                print(f"[DEBUG] _decode_one_block: Step {step}/{max_decode_steps}, is_final={is_final}")
+            # Decode until BBD/EOS/max length detected
+            # GLOBAL loop - process_idx continues across ALL blocks!
+            while self.process_idx < self.max_length:
+                print(f"[DEBUG] _decode_one_block: process_idx={self.process_idx}/{self.max_length}, is_final={is_final}")
                 new_state.output_index += 1
 
                 # Score current hypotheses and get new states
@@ -683,7 +682,7 @@ class BlockwiseSynchronousBeamSearch:
                 # This matches ESPnet's approach (expand, then check, then potentially rollback)
 
                 # DEBUG: Log first step scores for each block
-                if step == 0:
+                if self.process_idx == 0:
                     logger.debug(f"Block {self.processed_block}, Step 0 scores (frames={encoder_out.size(1)}):")
                     top_10_scores, top_10_tokens = torch.topk(scores[0], 10)
                     for j, (s, t) in enumerate(zip(top_10_scores.tolist(), top_10_tokens.tolist())):
@@ -735,11 +734,11 @@ class BlockwiseSynchronousBeamSearch:
 
                         if len(remaining_hyps) == 0:
                             # All hypotheses reached EOS - use the best one and stop
-                            print(f"[DEBUG] EOS: All {len(completed_hyps)} hyp(s) reached EOS at step {step}, using best")
+                            print(f"[DEBUG] EOS: All {len(completed_hyps)} hyp(s) reached EOS at process_idx={self.process_idx}, using best")
                             new_state.hypotheses = [max(completed_hyps, key=lambda h: h.score)]
                         else:
                             # Some hypotheses still active - remove EOS ones and continue next block
-                            print(f"[DEBUG] EOS: {len(completed_hyps)} hyp(s) reached EOS at step {step}, removing them, {len(remaining_hyps)} remaining")
+                            print(f"[DEBUG] EOS: {len(completed_hyps)} hyp(s) reached EOS at process_idx={self.process_idx}, removing them, {len(remaining_hyps)} remaining")
                             new_state.hypotheses = remaining_hyps
 
                         logger.info(f"Detected hyp(s) reaching EOS in this block, stopping.")
@@ -757,15 +756,15 @@ class BlockwiseSynchronousBeamSearch:
                 # BBD: Check for repetition AFTER beam expansion
                 # Matches ESPnet's approach (batch_beam_search_online.py:209-218)
                 if self.use_bbd and not is_final:
-                    print(f"[DEBUG] BBD: Checking repetition at step {step}, is_final={is_final}")
+                    print(f"[DEBUG] BBD: Checking repetition at process_idx={self.process_idx}, is_final={is_final}")
                     has_repetition = self.detect_repetition_or_eos(new_state.hypotheses)
                     print(f"[DEBUG] BBD: has_repetition={has_repetition}")
 
                     if has_repetition:
-                        print(f"[DEBUG] BBD: Repetition detected at step {step}, stopping block")
+                        print(f"[DEBUG] BBD: Repetition detected at process_idx={self.process_idx}, stopping block")
                         for hyp in new_state.hypotheses:
                             print(f"[DEBUG] BBD: Hypothesis: {hyp.yseq.tolist()}")
-                        logger.debug(f"BBD: Repetition detected at step {step}, stopping block")
+                        logger.debug(f"BBD: Repetition detected at process_idx={self.process_idx}, stopping block")
 
                         # Rollback to previous hypotheses (1 step, matching ESPnet)
                         if len(prev_step_hypotheses) > 0:
@@ -782,8 +781,14 @@ class BlockwiseSynchronousBeamSearch:
                 # Check if all hypotheses ended with EOS (only stop if is_final)
                 all_eos = all(h.yseq[-1].item() == self.eos_id for h in new_state.hypotheses)
                 if all_eos and is_final:
-                    logger.debug(f"All hypotheses ended with EOS at step {step}")
+                    logger.debug(f"All hypotheses ended with EOS at process_idx={self.process_idx}")
                     break
+
+                # CRITICAL: Increment global position counter!
+                # This is what makes process_idx persist across blocks
+                # Matches ESPnet: self.process_idx += 1 (batch_beam_search_online.py:463)
+                self.process_idx += 1
+                logger.debug(f"Incremented process_idx to {self.process_idx}")
 
         return new_state
 
