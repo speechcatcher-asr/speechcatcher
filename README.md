@@ -203,7 +203,7 @@ Speechcatcher was gracefully funded by
 </a>
 
 
-<a href="https://wordcab.com">Wordcab</a> (<a href="https://github.com/info-wordcab">@info-wordcab</a>)
+<a href="https://wordcab.com">Wordcab Inc.</a> (<a href="https://github.com/info-wordcab">@info-wordcab</a>)
 
 <a href="https://wordcab.com">
     <img src="https://raw.githubusercontent.com/speechcatcher-asr/.github/refs/heads/main/wordcab_logo.webp" width="160" title="Wordcab logo">
