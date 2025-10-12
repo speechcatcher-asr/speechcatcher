@@ -194,10 +194,17 @@ If you use speechcatcher models in your research, for now just cite this reposit
 
 ## Sponsors
 
-Speechcatcher is gracefully funded by
+Speechcatcher was gracefully funded by
 
 <a href="https://media-tech-lab.com">Media Tech Lab by Media Lab Bayern</a> (<a href="https://github.com/media-tech-lab">@media-tech-lab</a>)
 
 <a href="https://media-tech-lab.com">
     <img src="https://raw.githubusercontent.com/media-tech-lab/.github/main/assets/mtl-powered-by.png" width="240" title="Media Tech Lab powered by logo">
+</a>
+
+
+<a href="https://wordcab.com">Wordcab</a> (<a href="https://github.com/info-wordcab">@info-wordcab</a>)
+
+<a href="https://wordcab.com">
+    <img src="https://raw.githubusercontent.com/speechcatcher-asr/.github/refs/heads/main/wordcab_logo.webp" width="240" title="Wordcab logo">
 </a>
