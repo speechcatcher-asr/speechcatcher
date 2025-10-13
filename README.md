@@ -148,12 +148,19 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
       -t MAX_RECORD_TIME, --max-record-time MAX_RECORD_TIME
                             Maximum record time in seconds (live transcription).
       -m MODEL, --model MODEL
-                            Choose a model. German: de_streaming_transformer_{m,l,xl}. Spanish: es_streaming_transformer_{m,l}. English: en_streaming_transformer_{m,l}. Or provide a HuggingFace model ID or URL.
+                            Choose a model. German: de_streaming_transformer_{m,l,xl}. Spanish: es_streaming_transformer_{m,l}.
+                            English: en_streaming_transformer_{m,l}. Or provide a HuggingFace model ID or URL.
       -d DEVICE, --device DEVICE
                             Computation device. Either 'cpu' or 'cuda'. Note: Mac M1 / mps support isn't available yet.
       --lang LANGUAGE       Explicitly set language, default is empty = deduct language from model tag
       -b BEAMSIZE, --beamsize BEAMSIZE
                             Beam size for the decoder
+      --decoder {native,espnet}
+                            Decoder implementation: "espnet" (default) or "native" (experimental)
+      --fp16                Use FP16 (half precision) for faster inference. Only supported with native decoder.
+      --disable-bbd         Disable Block Boundary Detection (BBD). Only applies to native decoder.
+                            BBD prevents repetition but may cause early stopping with subword tokenization
+                            (default: enabled to match ESPnet).
       --quiet               No partial transcription output when transcribing a media file
       --no-progress         Show no progress bar when transcribing a media file
       --no-exception-on-overflow
@@ -161,13 +168,17 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
       --save-debug-wav      Save recording to debug.wav, only applicable to live decoding
       --num-threads NUM_THREADS
                             Set number of threads used for intraop parallelism on CPU in pytorch.
+      --cache-dir CACHE_DIR
+                            Directory where model downloads are cached.
       -n NUM_PROCESSES, --num-processes NUM_PROCESSES
-                            Set number of processes used for processing long audio files in parallel (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() divided by two.
+                            Set number of processes used for processing long audio files in parallel
+                            (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() divided by two.
+      --chunk-length CHUNK_LENGTH
+                            Number of raw audio samples per chunk for streaming processing (default: 8192)
+      --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+                            Set logging level (default: ERROR). Use WARNING to see ESPnet N-best warnings.
 
 ## Speechcatcher websocket parameters
-
-    usage: speechcatcher_server [-h] [--host HOST] [--port PORT] [--model MODEL] [--device {cpu,cuda}] [--beamsize BEAMSIZE]
-                                [--cache-dir CACHE_DIR] [--format {wav,mp3,mp4,s16le,webm,ogg,acc}] [--pool-size POOL_SIZE] [--vosk-output-format]
 
     Speechcatcher WebSocket Server for streaming ASR
 
@@ -175,7 +186,9 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
       -h, --help            show this help message and exit
       --host HOST           Host for the WebSocket server
       --port PORT           Port for the WebSocket server
-      --model MODEL         Model to use for ASR. German: de_streaming_transformer_{m,l,xl}. Spanish: es_streaming_transformer_{m,l}. English: en_streaming_transformer_{m,l}.
+      --model {de_streaming_transformer_m,de_streaming_transformer_l,de_streaming_transformer_xl,es_streaming_transformer_m,es_streaming_transformer_l,en_streaming_transformer_m,en_streaming_transformer_l}
+                            Model to use for ASR. German: de_streaming_transformer_{m,l,xl}.
+                            Spanish: es_streaming_transformer_{m,l}. English: en_streaming_transformer_{m,l}.
       --device {cpu,cuda}   Device to run the ASR model on ('cpu' or 'cuda')
       --beamsize BEAMSIZE   Beam size for the decoder
       --cache-dir CACHE_DIR
@@ -185,6 +198,10 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
       --pool-size POOL_SIZE
                             Number of speech2text instances to preload
       --vosk-output-format  Enable Vosk-like output format
+      --finalize-update-iters FINALIZE_UPDATE_ITERS
+                            Number of iterations with no new update from the ASR util an utterance is finalized.
+      --max_partial_iters MAX_PARTIAL_ITERS
+                            Maximum number of iterations until utterance finalization is forced.
 
 ## Speechcatcher training
 
