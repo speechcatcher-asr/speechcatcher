@@ -409,7 +409,7 @@ def main():
     parser.add_argument('--host', type=str, default='localhost', help='Host for the WebSocket server')
     parser.add_argument('--port', type=int, default=2700, help='Port for the WebSocket server')
     parser.add_argument('--model', type=str, default='de_streaming_transformer_xl', choices=tags.keys(),
-                        help='Model to use for ASR')
+                        help='Model to use for ASR. German: de_streaming_transformer_{m,l,xl}. Spanish: es_streaming_transformer_{m,l}. English: en_streaming_transformer_{m,l}.')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda'],
                         help="Device to run the ASR model on ('cpu' or 'cuda')")
     parser.add_argument('--beamsize', type=int, default=3, help='Beam size for the decoder')
