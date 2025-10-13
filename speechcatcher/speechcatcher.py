@@ -17,6 +17,7 @@ import sys
 import argparse
 import hashlib
 import warnings
+import logging
 import math
 import json
 import multiprocessing
@@ -728,9 +729,16 @@ def main():
     parser.add_argument('--chunk-length', dest='chunk_length', default=8192,
                         help='Number of raw audio samples per chunk for streaming processing (default: 8192)',
                         type=int)
+    parser.add_argument('--log-level', dest='log_level', default='ERROR',
+                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                        help='Set logging level (default: ERROR). Use WARNING to see ESPnet N-best warnings.',
+                        type=str)
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
     args = parser.parse_args()
+
+    # Configure logging level based on user preference
+    logging.basicConfig(level=getattr(logging, args.log_level))
 
     if args.num_threads != -1:
         torch.set_num_threads(args.num_threads)
