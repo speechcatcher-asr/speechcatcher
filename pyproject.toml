@@ -32,7 +32,7 @@ dependencies = [
     "ffmpeg-python",
     "espnet_streaming_decoder @ git+https://github.com/speechcatcher-asr/espnet_streaming_decoder",
     # Using local espnet_model_zoo fork that eliminates espnet dependency
-    "espnet_model_zoo @ git+https://github.com/speechcatcher-asr/espnet_model_zoo@main",
+    "espnet_model_zoo @ git+https://github.com/speechcatcher-asr/espnet_model_zoo",
     "soundfile",
     "six",
     "pyaudio",
