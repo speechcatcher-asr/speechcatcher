@@ -76,6 +76,45 @@ def ensure_dir(f):
         os.makedirs(d)
 
 
+# Helper function to show model information and language recommendations
+def show_model_info(tag, quiet=False):
+    """Display information about loaded model and recommend larger models for other languages."""
+    if quiet:
+        return
+
+    # Detect language and size from tag
+    language_names = {'de': 'German', 'es': 'Spanish', 'en': 'English'}
+    model_sizes = {'_m': 'Medium', '_l': 'Large', '_xl': 'X-Large'}
+
+    language = None
+    size = None
+    for lang_code in ['de', 'es', 'en']:
+        if lang_code in tag:
+            language = language_names[lang_code]
+            break
+
+    for size_code in ['_xl', '_l', '_m']:
+        if size_code in tag:
+            size = model_sizes[size_code]
+            break
+
+    if language and size:
+        print(f"\nUsing model: {language} ({size})")
+
+        # Recommend largest models for other languages
+        if 'de' in tag:
+            print("\nRecommended models for other languages (largest):")
+            print("  English:  speechcatcher -m en_streaming_transformer_l <audio_file>")
+            print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
+        elif 'en' in tag:
+            print("\nRecommended models for other languages (largest):")
+            print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
+            print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
+        elif 'es' in tag:
+            print("\nRecommended models for other languages (largest):")
+            print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
+            print("  English:  speechcatcher -m en_streaming_transformer_l <audio_file>")
+
 # Load the espnet model with the given tag
 def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet', decoder_impl='native', fp16=False, use_bbd=False):
     """
@@ -135,7 +174,7 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
         if not config_path or not model_path:
             raise ValueError(f"Could not find config/model paths in info: {info}")
 
-        return ESPnetStreaming(
+        model = ESPnetStreaming(
             asr_train_config=str(config_path),
             asr_model_file=str(model_path),
             device=device,
@@ -152,6 +191,8 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
             decoder_text_length_limit=0,
             encoded_feat_length_limit=0
         )
+        show_model_info(tag, quiet)
+        return model
     else:
         # Use native built-in implementation (default)
         if fp16:
@@ -167,7 +208,7 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
             precision_str = "FP16 (AMP)" if fp16 else "FP32"
             print(f"Using built-in streaming decoder implementation ({precision_str})")
 
-        return Speech2TextStreaming(
+        model = Speech2TextStreaming(
             model_dir=model_dir,
             beam_size=beam_size,
             ctc_weight=0.3,  # From model config (decoder_weight=0.7, ctc_weight=0.3)
@@ -175,6 +216,8 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
             dtype=dtype,
             use_bbd=use_bbd,
         )
+        show_model_info(tag, quiet)
+        return model
 
 # Convert input file to 16 kHz mono, use stdout to capture the output in-memory
 def convert_inputfile_inmemory(filename):
