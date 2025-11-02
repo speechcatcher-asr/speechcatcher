@@ -43,7 +43,7 @@ class Speech2TextStreaming:
     def __init__(
         self,
         model_dir: Union[str, Path],
-        beam_size: int = 10,
+        beam_size: int = 5,
         ctc_weight: float = 0.3,
         device: str = "cpu",
         dtype: str = "float32",
@@ -403,12 +403,14 @@ class Speech2TextStreaming:
         self,
         speech: Union[np.ndarray, torch.Tensor],
         is_final: bool = False,
+        finalize_all: bool = False,
     ) -> List[Tuple[str, List[str], List[int]]]:
         """Process speech chunk and return recognition results.
 
         Args:
             speech: Input speech chunk - raw audio (samples,) or features (time, feat_dim)
-            is_final: Whether this is the final chunk
+            is_final: Whether this is the final chunk in a segment
+            finalize_all: Whether to output all hypotheses (only True for the VERY LAST chunk)
 
         Returns:
             List of (text, tokens, token_ids) tuples for each hypothesis
@@ -463,15 +465,19 @@ class Speech2TextStreaming:
 
         # Convert hypotheses to output format
         # For streaming: only output COMPLETED hypotheses (with EOS)
-        # For final: output all hypotheses
-        if not is_final:
-            # Filter to only completed hypotheses (ending with EOS)
+        # For final: output completed hypotheses UNLESS finalize_all=True (meaning this is the very last chunk)
+        if not is_final or not finalize_all:
+            # Default: Filter to only completed hypotheses (ending with EOS)
+            # This applies to:
+            # - Non-final chunks (normal streaming)
+            # - Intermediate final chunks (segment ends) when finalize_all=False
             output_hyps = [h for h in self.beam_state.hypotheses if h.yseq[-1].item() == 1023]
             # If no completed hypotheses, output nothing
             if not output_hyps:
                 output_hyps = []
         else:
-            # For final: output all hypotheses
+            # Only output all hypotheses when finalize_all=True AND is_final=True
+            # This means we're at the VERY LAST chunk of the entire audio
             output_hyps = self.beam_state.hypotheses
 
         results = []
@@ -592,7 +598,7 @@ class Speech2TextStreaming:
 
 def create_streaming_interface(
     model_dir: Union[str, Path],
-    beam_size: int = 10,
+    beam_size: int = 5,
     ctc_weight: float = 0.3,
     device: str = "cpu",
 ) -> Speech2TextStreaming:

@@ -43,6 +43,7 @@ from speechcatcher.simple_endpointing import segment_speech
 pbar_queue = None
 speech2text_global = None
 speech_global = None
+decoder_impl_global = 'espnet'  # Track which decoder is being used
 
 espnet_input_factor = 24.0
 
@@ -56,14 +57,16 @@ tags = {
     "en_streaming_transformer_l": "speechcatcher/wordcab_speechcatcher_english_espnet_streaming_transformer_35k_train_size_l_raw_en_bpe1024"}
 
 # See https://stackoverflow.com/questions/75193175/why-i-cant-use-multiprocessing-queue-with-processpoolexecutor
-def init_pool_processes(q, speech2text, speech):
+def init_pool_processes(q, speech2text, speech, decoder_impl='espnet'):
     global pbar_queue
     global speech2text_global
     global speech_global
+    global decoder_impl_global
 
     pbar_queue = q
     speech2text_global = speech2text
     speech_global = speech
+    decoder_impl_global = decoder_impl
 
 
 # Ensure that the directory for the path f exists
@@ -135,9 +138,19 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
         return ESPnetStreaming(
             asr_train_config=str(config_path),
             asr_model_file=str(model_path),
+            device=device,
+            token_type=None,
+            bpemodel=None,
+            maxlenratio=0.0,
+            minlenratio=0.0,
             beam_size=beam_size,
             ctc_weight=0.3,
-            device=device,
+            lm_weight=0.0,
+            penalty=0.0,
+            nbest=1,
+            disable_repetition_detection=True,
+            decoder_text_length_limit=0,
+            encoded_feat_length_limit=0
         )
     else:
         # Use native built-in implementation (default)
@@ -292,7 +305,7 @@ def linear_interpolate_pos(input_list_in):
 # Using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
 # progress mode: output transcription progress
-def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4, chunk_length=8192):
+def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4, chunk_length=8192, decoder_impl='espnet'):
     ensure_dir('.tmp/')
     wavfile_path = '.tmp/' + hashlib.sha1(media_path.encode("utf-8")).hexdigest() + '.wav'
     convert_inputfile(media_path, wavfile_path)
@@ -311,7 +324,7 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
     # - 24 encoder frames × 4 (subsampling) × 160 (STFT hop) = 15,360 samples minimum
     # - Full block: 40 × 4 × 160 = 25,600 samples (1.6s at 16kHz)
     # Using passed chunk_length parameter (default 8192, configurable via --chunk-length)
-    complete_text, auxiliary_info = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet)
+    complete_text, auxiliary_info = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet, decoder_impl=decoder_impl)
 
     # Automatically generate output .txt name from media_path if it isnt set
     # media_path can also be an URL, in that case it needs special handling
@@ -348,10 +361,14 @@ def process_tasks_serially(tasks):
 # Recgonize the speech in 'raw_speech_data' with sampling rate 'rate' using the model in 'speech2text'.
 # The rawspeech data should be a numpy array of dtype='int16'
 
-def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_processes=1, progress=True, quiet=False, status=None):
-    # Normalize int16 audio to [-1, 1] range using float32 for precision
-    # int16 range is [-32768, 32767], so we divide by 32768 to get [-1, 1]
-    speech = raw_speech_data.astype(np.float32) / 32768.0
+def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_processes=1, progress=True, quiet=False, status=None, decoder_impl='espnet'):
+    # Normalize int16 audio to [-1, 1] range
+    # Use float16 for ESPnet decoder (original behavior), float32 for native decoder (more precision)
+    # int16 range is [-32768, 32767], use 32767.0 to match original ESPnet behavior
+    if decoder_impl == 'espnet':
+        speech = raw_speech_data.astype(np.float16) / 32767.0  # ESPnet uses float16
+    else:
+        speech = raw_speech_data.astype(np.float32) / 32768.0  # Native decoder uses float32
 
     speech_len = len(speech)
     speech_len_frames = (speech_len / rate) * 100.
@@ -406,19 +423,19 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
 
     if num_processes == 1:
         # If num_processes is 1, run tasks serially
-        init_pool_processes(q, speech2text, speech)
+        init_pool_processes(q, speech2text, speech, decoder_impl)
         start_end_positions = zip(segments_i[:-1], segments_i[1:])
         tasks = [lambda start=start, end=end: recognize_segment(speech_len, start, end, chunk_length,
-                                                           progress, rate, quiet) for start, end in start_end_positions]
+                                                           progress, rate, quiet, max_i) for start, end in start_end_positions]
         paragraphs_raw = process_tasks_serially(tasks)
     else: #parallel execution with concurrent.futures and ProcessPoolExecutor
         with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
-                                 initargs=(q, speech2text, speech)) as executor:
+                                 initargs=(q, speech2text, speech, decoder_impl)) as executor:
 
             start_end_positions = zip(segments_i[:-1], segments_i[1:])
             for start, end in start_end_positions:
                 data_future = executor.submit(recognize_segment, speech_len, start, end, chunk_length,
-                                              progress, rate, quiet)
+                                              progress, rate, quiet, max_i)
                 futures.append(data_future)
 
                 seg_num += 1
@@ -504,7 +521,7 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
 
 
 # Transcribe a segment of speech, defined by start and end points
-def recognize_segment(speech_len, start, end, chunk_length, progress, rate, quiet):
+def recognize_segment(speech_len, start, end, chunk_length, progress, rate, quiet, max_i):
     segment_text = ''
     prev_lines = 0
 
@@ -518,14 +535,15 @@ def recognize_segment(speech_len, start, end, chunk_length, progress, rate, quie
 
         segment_text, prev_lines = batch_recognize_inner_loop(speech_chunk, i, prev_lines,
                                                               progress, quiet, rate, chunk_length,
-                                                              is_final=(i == end))
+                                                              is_final=(i == end),
+                                                              finalize_all=(i == max_i))
         if progress:
             pbar_queue.put(1, block=False)
     return segment_text
 
 # This advances the recognition by one step
 def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rate,
-                               chunk_length, is_final, debug_pos=False):
+                               chunk_length, is_final, finalize_all=False, debug_pos=False):
 
     if is_final and debug_pos:
        # first calculate in seconds, then multiply with 100 to get the framepos (100 frames in one second.)
@@ -539,30 +557,25 @@ def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rat
 
     # avoid sending very short chunks through speech2text_global
     if chunk_length > 10:
-        results = speech2text_global(speech=speech_chunk, is_final=is_final)
+        results = speech2text_global(speech=speech_chunk, is_final=is_final, finalize_all=finalize_all, always_assemble_hyps= not (quiet or progress))
 
-        # Reset beam state after finalizing a segment to start fresh for the next one
-        if is_final:
+        # Reset beam state after finalizing a segment (only for native decoder)
+        # The ESPnet decoder doesn't benefit from this and it adds overhead
+        if is_final and decoder_impl_global == 'native':
             speech2text_global.reset()
 
         if quiet or progress:
             if is_final:
-                # New API returns (text, tokens, token_ids) - 3-tuple
                 utterance_text = results[0][0] if results is not None and len(results) > 0 else ""
                 utterance_token = results[0][1] if results is not None and len(results) > 0 else []
-                # Token positions/timestamps not yet available in new implementation
-                # Generate dummy timestamps (frame positions) for each token
-                utterance_pos = [float(i * 10) for i in range(len(utterance_token))]  # 10 frames per token
-                utterance_hyp = {}
+                utterance_pos = results[0][-2] if results is not None and len(results) > 0 else []
+                utterance_hyp = results[0][-3] if results is not None and len(results) > 0 else {}
         else:
             if results is not None and len(results) > 0:
-                # New API returns (text, tokens, token_ids) - 3-tuple
                 utterance_text = results[0][0]
                 utterance_token = results[0][1]
-                # Token positions/timestamps not yet available in new implementation
-                # Generate dummy timestamps (frame positions) for each token
-                utterance_pos = [float(i * 10) for i in range(len(utterance_token))]  # 10 frames per token
-                utterance_hyp = {}            
+                utterance_pos = results[0][-2]
+                utterance_hyp = results[0][-3]
 
                 prev_lines = progress_output(results[0][0], prev_lines)
             else:
@@ -784,7 +797,7 @@ def main():
         if not (args.inputfile.startswith('http://') or args.inputfile.startswith('https://')) and not os.path.isfile(args.inputfile):
             print(f"Error: Input file '{args.inputfile}' does not exist or is not a valid file.")
             sys.exit(-1)
-        recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes, chunk_length=args.chunk_length)
+        recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes, chunk_length=args.chunk_length, decoder_impl=args.decoder)
     else:
         parser.print_help()
 
