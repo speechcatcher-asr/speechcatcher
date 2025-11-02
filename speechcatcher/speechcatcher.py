@@ -191,7 +191,7 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
             decoder_text_length_limit=0,
             encoded_feat_length_limit=0
         )
-        show_model_info(tag, quiet)
+        show_model_info(tag)
         return model
     else:
         # Use native built-in implementation (default)
@@ -216,16 +216,16 @@ def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/
             dtype=dtype,
             use_bbd=use_bbd,
         )
-        show_model_info(tag, quiet)
+        show_model_info(tag)
         return model
 
 # Convert input file to 16 kHz mono, use stdout to capture the output in-memory
-def convert_inputfile_inmemory(filename):
+def convert_inputfile_inmemory(filename, show_ffmpeg_output=False):
     try:
         out, _ = (
             ffmpeg.input(filename)
                 .output('pipe:', format='wav', acodec='pcm_s16le', ac=1, ar='16k')
-                .run(quiet=False, overwrite_output=True)  # Set quiet=False to show ffmpeg logs
+                .run(quiet=not show_ffmpeg_output, overwrite_output=True)
         )
         return out
     except ffmpeg.Error as e:
@@ -234,12 +234,12 @@ def convert_inputfile_inmemory(filename):
         raise
 
 # Convert input file to 16 kHz mono
-def convert_inputfile(filename, outfile_wav):
+def convert_inputfile(filename, outfile_wav, show_ffmpeg_output=False):
     try:
         return (
             ffmpeg.input(filename)
                 .output(outfile_wav, acodec='pcm_s16le', ac=1, ar='16k')
-                .run(quiet=False, overwrite_output=True)  # Set quiet=False to show ffmpeg logs
+                .run(quiet=not show_ffmpeg_output, overwrite_output=True)
         )
     except ffmpeg.Error as e:
         print("FFmpeg error occurred:")
@@ -348,10 +348,10 @@ def linear_interpolate_pos(input_list_in):
 # Using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
 # progress mode: output transcription progress
-def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4, chunk_length=8192, decoder_impl='espnet'):
+def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4, chunk_length=8192, decoder_impl='espnet', show_ffmpeg_output=False):
     ensure_dir('.tmp/')
     wavfile_path = '.tmp/' + hashlib.sha1(media_path.encode("utf-8")).hexdigest() + '.wav'
-    convert_inputfile(media_path, wavfile_path)
+    convert_inputfile(media_path, wavfile_path, show_ffmpeg_output)
 
     with wave.open(wavfile_path, 'rb') as wavfile_in:
         ch = wavfile_in.getnchannels()
@@ -789,6 +789,9 @@ def main():
                         choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
                         help='Set logging level (default: ERROR). Use WARNING to see ESPnet N-best warnings.',
                         type=str)
+    parser.add_argument('--show-ffmpeg-output', dest='show_ffmpeg_output',
+                        help='Show ffmpeg command output (default: suppressed for cleaner output)',
+                        action='store_true')
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
     args = parser.parse_args()
@@ -840,7 +843,7 @@ def main():
         if not (args.inputfile.startswith('http://') or args.inputfile.startswith('https://')) and not os.path.isfile(args.inputfile):
             print(f"Error: Input file '{args.inputfile}' does not exist or is not a valid file.")
             sys.exit(-1)
-        recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes, chunk_length=args.chunk_length, decoder_impl=args.decoder)
+        recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes, chunk_length=args.chunk_length, decoder_impl=args.decoder, show_ffmpeg_output=args.show_ffmpeg_output)
     else:
         parser.print_help()
 
