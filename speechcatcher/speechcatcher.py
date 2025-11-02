@@ -106,14 +106,17 @@ def show_model_info(tag, quiet=False):
             print("\nRecommended models for other languages (largest):")
             print("  English:  speechcatcher -m en_streaming_transformer_l <audio_file>")
             print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
+            print()
         elif 'en' in tag:
             print("\nRecommended models for other languages (largest):")
             print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
             print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
+            print()
         elif 'es' in tag:
             print("\nRecommended models for other languages (largest):")
             print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
             print("  English:  speechcatcher -m en_streaming_transformer_l <audio_file>")
+            print()
 
 # Load the espnet model with the given tag
 def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet', decoder_impl='native', fp16=False, use_bbd=False):
