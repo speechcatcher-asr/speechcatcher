@@ -88,8 +88,9 @@ def show_model_info(tag, quiet=False):
 
     language = None
     size = None
-    for lang_code in ['de', 'es', 'en']:
-        if lang_code in tag:
+    # Check for language code at the beginning of the tag (e.g., "de_", "en_", "es_")
+    for lang_code in ['de', 'en', 'es']:
+        if tag.startswith(lang_code + '_'):
             language = language_names[lang_code]
             break
 
@@ -102,17 +103,17 @@ def show_model_info(tag, quiet=False):
         print(f"\nUsing model: {language} ({size})")
 
         # Recommend largest models for other languages
-        if 'de' in tag:
+        if tag.startswith('de_'):
             print("\nRecommended models for other languages (largest):")
             print("  English:  speechcatcher -m en_streaming_transformer_l <audio_file>")
             print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
             print()
-        elif 'en' in tag:
+        elif tag.startswith('en_'):
             print("\nRecommended models for other languages (largest):")
             print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
             print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
             print()
-        elif 'es' in tag:
+        elif tag.startswith('es_'):
             print("\nRecommended models for other languages (largest):")
             print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
             print("  English:  speechcatcher -m en_streaming_transformer_l <audio_file>")
