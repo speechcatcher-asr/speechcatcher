@@ -78,10 +78,8 @@ def ensure_dir(f):
 
 # Helper function to show model information and language recommendations
 def show_model_info(tag, quiet=False):
-    """Display information about loaded model and recommend larger models for other languages."""
-    if quiet:
-        return
-
+    """Display information about loaded model and recommend larger models for other languages.
+    Always shows help text regardless of quiet parameter."""
     # Detect language and size from tag
     language_names = {'de': 'German', 'es': 'Spanish', 'en': 'English'}
     model_sizes = {'_m': 'Medium', '_l': 'Large', '_xl': 'X-Large'}
