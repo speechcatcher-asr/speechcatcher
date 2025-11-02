@@ -101,7 +101,7 @@ def show_model_info(tag, quiet=False):
             break
 
     if language and size:
-        print(f"\nUsing model: {language} ({size})")
+        print(f"\nUsing model tag: {language} ({size})")
 
         # Recommend largest models for other languages
         if '_german_' in tag or '_de_bpe' in tag or tag.startswith('de_'):
