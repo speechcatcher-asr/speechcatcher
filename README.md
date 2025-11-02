@@ -52,6 +52,10 @@ Activate it:
 
     source speechcatcher_env/bin/activate
 
+If you want a CPU-only version of speechcatcher, install a CPU-only pytorch version with:
+
+    pip3 install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cpu
+
 Then install speechcatcher:
 
     pip3 install git+https://github.com/speechcatcher-asr/speechcatcher
