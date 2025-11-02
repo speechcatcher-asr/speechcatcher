@@ -1,0 +1,64 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm[toml]>=6.2"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "speechcatcher"
+version = "0.5.0"
+description = "Speechcatcher is an open source toolbox for transcribing speech from media files (audio/video)."
+readme = "README.md"
+requires-python = ">=3.8"
+license = {text = "MIT"}
+authors = [
+    {name = "Benjamin Milde", email = "bmilde@users.noreply.github.com"}
+]
+keywords = ["asr", "speech-recognition", "streaming", "espnet"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+
+dependencies = [
+    "setuptools",
+    "torch",
+    "torchaudio",
+    "ffmpeg-python",
+    "espnet_streaming_decoder @ git+https://github.com/speechcatcher-asr/espnet_streaming_decoder",
+    # Using local espnet_model_zoo fork that eliminates espnet dependency
+    "espnet_model_zoo @ git+https://github.com/speechcatcher-asr/espnet_model_zoo@main",
+    "soundfile",
+    "six",
+    "pyaudio",
+    "python_speech_features",
+    "scipy",
+    "tqdm",
+    "somajo",
+    "websockets>=14.2",
+    # CRITICAL: Override older sentencepiece pins from subdependencies
+    # sentencepiece 0.2.1+ has Python 3.13 wheels and fixes build issues
+    "sentencepiece>=0.2.1",
+]
+
+[project.urls]
+Homepage = "https://github.com/speechcatcher-asr/speechcatcher"
+Repository = "https://github.com/speechcatcher-asr/speechcatcher.git"
+
+[project.scripts]
+speechcatcher = "speechcatcher.speechcatcher:main"
+speechcatcher_compute_wer = "speechcatcher.compute_wer:main"
+speechcatcher_server = "speechcatcher.speechcatcher_server:main"
+speechcatcher_vosk_test_client = "speechcatcher.vosk_test_client:main"
+speechcatcher_simple_endpointing = "speechcatcher.simple_endpointing:main"
+
+[tool.setuptools]
+packages = ["speechcatcher"]
+
+[tool.setuptools.package-data]
+speechcatcher = []

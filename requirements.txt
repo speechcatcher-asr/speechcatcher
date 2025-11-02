@@ -3,7 +3,7 @@ torch
 torchaudio
 ffmpeg-python
 espnet_streaming_decoder @ git+https://github.com/speechcatcher-asr/espnet_streaming_decoder
-espnet_model_zoo @ git+https://github.com/speechcatcher-asr/espnet_model_zoo
+espnet_model_zoo @ git+https://github.com/speechcatcher-asr/espnet_model_zoo@main
 soundfile
 six
 pyaudio
@@ -12,3 +12,5 @@ scipy
 tqdm
 somajo
 websockets>=14.2
+# CRITICAL: sentencepiece 0.2.1+ has Python 3.13 wheels
+sentencepiece>=0.2.1
