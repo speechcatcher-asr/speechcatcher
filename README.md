@@ -66,13 +66,32 @@ After you have succesfully installed speechcatcher, you can decode any media fil
 
     speechcatcher media_file.mp4
 
-or to transcribe data live from your microphone:
+By default, this uses the German `de_streaming_transformer_xl` model. To use a different model, use the `-m` flag:
+
+    # Transcribe an English audio file
+    speechcatcher -m en_streaming_transformer_l media_file.mp4
+
+    # Transcribe a Spanish audio file
+    speechcatcher -m es_streaming_transformer_l media_file.mp4
+
+    # Use a smaller but faster German model
+    speechcatcher -m de_streaming_transformer_m media_file.mp4
+
+To transcribe data live from your microphone:
 
     speechcatcher -l
 
-or to launch a Vosk compatible websocket server for live transcription on ws://localhost:2700/ 
+or with English:
+
+    speechcatcher -m en_streaming_transformer_l -l
+
+or to launch a Vosk compatible websocket server for live transcription on ws://localhost:2700/
 
     speechcatcher_server --vosk-output-format --port 2700
+
+or with Spanish:
+
+    speechcatcher_server --model es_streaming_transformer_l --vosk-output-format --port 2700
 
 All required model files are downloaded automatically and placed into a ".cache" directory.
 
@@ -83,25 +102,34 @@ To use speechcatcher in your Python script, you need to import the speechcatcher
     from speechcatcher import speechcatcher
     import numpy as np
     from scipy.io import wavfile
-    
+
     # you need to run speechcatcher in a '__main__' guarded block:
     if __name__ == '__main__':
-        short_tag = 'de_streaming_transformer_xl'
+        # You can select from German, English, or Spanish models.
+        # Available models:
+        # German (default): 'de_streaming_transformer_m', 'de_streaming_transformer_l', 'de_streaming_transformer_xl'
+        # English: 'en_streaming_transformer_m', 'en_streaming_transformer_l'
+        # Spanish: 'es_streaming_transformer_m', 'es_streaming_transformer_l'
+
+        short_tag = 'de_streaming_transformer_xl'  # German (default, best accuracy)
+        # short_tag = 'en_streaming_transformer_l'  # English (large model)
+        # short_tag = 'es_streaming_transformer_l'  # Spanish (large model)
+
         speech2text = speechcatcher.load_model(speechcatcher.tags[short_tag])
-    
+
         wav_file = 'input.wav'
         rate, audio_data = wavfile.read(wav_file)
         speech = audio_data.astype(np.int16)
-    
+
         print(f"Sample Rate: {rate} Hz")
         print(f"Audio Shape: {audio_data.shape}")
-    
+
         # speech is a numpy array of dtype='np.int16' (16bit audio with 16kHz sampling rate)
         complete_text, paragraphs = speechcatcher.recognize(speech2text, speech, rate, quiet=True, progress=False)
-    
+
         # complete_text is a string with the complete decoded text
         print(complete_text)
-        
+
         # -> Faust. Eine Tragödie von Johann Wolfgang von Goethe. Zueignung. Ihr naht euch wieder, schwankende Gestalten...
 
         # paragraphs contains a list of paragraphs with additional information, such as start and end position,
