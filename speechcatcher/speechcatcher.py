@@ -17,6 +17,7 @@ import sys
 import argparse
 import hashlib
 import warnings
+import logging
 import math
 import json
 import multiprocessing
@@ -25,7 +26,7 @@ import threading
 import itertools
 warnings.filterwarnings("ignore")
 
-from espnet_streaming_decoder.asr_inference_streaming import Speech2TextStreaming
+from speechcatcher.speech2text_streaming import Speech2TextStreaming
 
 from espnet_model_zoo.downloader import ModelDownloader
 import numpy as np
@@ -42,23 +43,30 @@ from speechcatcher.simple_endpointing import segment_speech
 pbar_queue = None
 speech2text_global = None
 speech_global = None
+decoder_impl_global = 'espnet'  # Track which decoder is being used
 
 espnet_input_factor = 24.0
 
 tags = {
     "de_streaming_transformer_m": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024",
     "de_streaming_transformer_l": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024",
-    "de_streaming_transformer_xl": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_26k_train_size_xl_raw_de_bpe1024"}
+    "de_streaming_transformer_xl": "speechcatcher/speechcatcher_german_espnet_streaming_transformer_26k_train_size_xl_raw_de_bpe1024",
+    "es_streaming_transformer_m": "speechcatcher/wordcab_speechcatcher_spanish_espnet_streaming_transformer_35k_train_size_m_raw_es_bpe1024",
+    "es_streaming_transformer_l": "speechcatcher/wordcab_speechcatcher_spanish_espnet_streaming_transformer_35k_train_size_l_raw_es_bpe1024",
+    "en_streaming_transformer_m": "speechcatcher/wordcab_speechcatcher_english_espnet_streaming_transformer_35k_train_size_m_raw_en_bpe1024",
+    "en_streaming_transformer_l": "speechcatcher/wordcab_speechcatcher_english_espnet_streaming_transformer_35k_train_size_l_raw_en_bpe1024"}
 
 # See https://stackoverflow.com/questions/75193175/why-i-cant-use-multiprocessing-queue-with-processpoolexecutor
-def init_pool_processes(q, speech2text, speech):
+def init_pool_processes(q, speech2text, speech, decoder_impl='espnet'):
     global pbar_queue
     global speech2text_global
     global speech_global
+    global decoder_impl_global
 
     pbar_queue = q
     speech2text_global = speech2text
     speech_global = speech
+    decoder_impl_global = decoder_impl
 
 
 # Ensure that the directory for the path f exists
@@ -68,34 +76,163 @@ def ensure_dir(f):
         os.makedirs(d)
 
 
+# Helper function to show model information and language recommendations
+def show_model_info(tag, quiet=False):
+    """Display information about loaded model and recommend larger models for other languages.
+    Always shows help text regardless of quiet parameter."""
+    # Detect language and size from tag
+    language_names = {'de': 'German', 'es': 'Spanish', 'en': 'English'}
+    model_sizes = {'_m': 'Medium', '_l': 'Large', '_xl': 'X-Large'}
+
+    language = None
+    size = None
+    # Check for language code anywhere in the tag (works with both short tags and full HuggingFace paths)
+    # For short tags like "en_streaming_transformer_l", or full paths with "_english_" and "_en_"
+    if '_english_' in tag or '_en_bpe' in tag or tag.startswith('en_'):
+        language = language_names['en']
+    elif '_spanish_' in tag or '_es_bpe' in tag or tag.startswith('es_'):
+        language = language_names['es']
+    elif '_german_' in tag or '_de_bpe' in tag or tag.startswith('de_'):
+        language = language_names['de']
+
+    for size_code in ['_xl', '_l', '_m']:
+        if size_code in tag:
+            size = model_sizes[size_code]
+            break
+
+    if language and size:
+        print(f"\nUsing model tag: {language} ({size})")
+
+        # Recommend largest models for other languages
+        if '_german_' in tag or '_de_bpe' in tag or tag.startswith('de_'):
+            print("\nRecommended models for other languages (largest):")
+            print("  English:  speechcatcher -m en_streaming_transformer_l <audio_file>")
+            print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
+            print()
+        elif '_english_' in tag or '_en_bpe' in tag or tag.startswith('en_'):
+            print("\nYou selected: English language model")
+            print("\nTo use other languages, run:")
+            print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
+            print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
+            print()
+        elif '_spanish_' in tag or '_es_bpe' in tag or tag.startswith('es_'):
+            print("\nYou selected: Spanish language model")
+            print("\nTo use other languages, run:")
+            print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
+            print("  English:  speechcatcher -m en_streaming_transformer_l <audio_file>")
+            print()
+
 # Load the espnet model with the given tag
-def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet'):
+def load_model(tag, device='cpu', beam_size=5, quiet=False, cache_dir='~/.cache/espnet', decoder_impl='native', fp16=False, use_bbd=False):
     """
     `tag` can be:
       - a Hugging Face repo id like "speechcatcher/..."
       - a direct https URL to a packed ESPnet model archive
       - a local path to a packed archive
+
+    `decoder_impl` can be:
+      - 'native' (default): Use built-in Speech2TextStreaming implementation
+      - 'espnet': Use original ESPnet streaming decoder (requires espnet_streaming_decoder package)
+
+    `fp16` (bool): Use FP16 (half precision) for faster inference (only supported with native decoder)
     """
+    from pathlib import Path
+
     espnet_model_downloader = ModelDownloader(cache_dir)
     # IMPORTANT: just pass tag verbatim; ModelDownloader will now do the right thing.
     info = espnet_model_downloader.download_and_unpack(tag, quiet=quiet)
 
-    return Speech2TextStreaming(
-        **info,
-        device=device, token_type=None, bpemodel=None,
-        maxlenratio=0.0, minlenratio=0.0, beam_size=beam_size,
-        ctc_weight=0.3, lm_weight=0.0, penalty=0.0, nbest=1,
-        disable_repetition_detection=True,
-        decoder_text_length_limit=0, encoded_feat_length_limit=0
-    )
+    # Extract model directory from info dict
+    # The info dict contains file paths - use one to get the model directory
+    model_dir = None
+    for key in ['asr_model_file', 'asr_train_config', 'model_file', 'train_config']:
+        if key in info and info[key]:
+            model_dir = Path(info[key]).parent
+            break
+
+    if model_dir is None:
+        raise ValueError(f"Could not determine model directory from info: {info}")
+
+    if not quiet:
+        print(f"Loading model from {model_dir}")
+
+    if decoder_impl == 'espnet':
+        # Use original ESPnet streaming decoder implementation
+        try:
+            from espnet_streaming_decoder.asr_inference_streaming import Speech2TextStreaming as ESPnetStreaming
+        except ImportError:
+            print("\nERROR: espnet_streaming_decoder package not found!")
+            print("The ESPnet decoder is the default. To install it, run:")
+            print("  pip3 install git+https://github.com/speechcatcher-asr/espnet_streaming_decoder")
+            print("\nAlternatively, use the experimental native decoder with: --decoder native")
+            sys.exit(1)
+
+        if fp16:
+            print("\nWARNING: FP16 is not supported with the ESPnet decoder.")
+            print("Continuing with FP32 (full precision).")
+
+        if not quiet:
+            print("Using original ESPnet streaming decoder implementation")
+
+        # Get config and model paths from info dict
+        config_path = info.get('asr_train_config') or info.get('train_config')
+        model_path = info.get('asr_model_file') or info.get('model_file')
+
+        if not config_path or not model_path:
+            raise ValueError(f"Could not find config/model paths in info: {info}")
+
+        model = ESPnetStreaming(
+            asr_train_config=str(config_path),
+            asr_model_file=str(model_path),
+            device=device,
+            token_type=None,
+            bpemodel=None,
+            maxlenratio=0.0,
+            minlenratio=0.0,
+            beam_size=beam_size,
+            ctc_weight=0.3,
+            lm_weight=0.0,
+            penalty=0.0,
+            nbest=1,
+            disable_repetition_detection=True,
+            decoder_text_length_limit=0,
+            encoded_feat_length_limit=0
+        )
+        show_model_info(tag)
+        return model
+    else:
+        # Use native built-in implementation (default)
+        if fp16:
+            print("\nWARNING: FP16 is not supported for this model.")
+            print("This model was not trained with mixed precision and produces corrupted output.")
+            print("FP16 will be disabled and FP32 will be used instead.")
+            print("(Future models trained with AMP/mixed precision may support FP16)")
+            fp16 = False
+
+        dtype = "float16" if fp16 else "float32"
+
+        if not quiet:
+            precision_str = "FP16 (AMP)" if fp16 else "FP32"
+            print(f"Using built-in streaming decoder implementation ({precision_str})")
+
+        model = Speech2TextStreaming(
+            model_dir=model_dir,
+            beam_size=beam_size,
+            ctc_weight=0.3,  # From model config (decoder_weight=0.7, ctc_weight=0.3)
+            device=device,
+            dtype=dtype,
+            use_bbd=use_bbd,
+        )
+        show_model_info(tag)
+        return model
 
 # Convert input file to 16 kHz mono, use stdout to capture the output in-memory
-def convert_inputfile_inmemory(filename):
+def convert_inputfile_inmemory(filename, show_ffmpeg_output=False):
     try:
         out, _ = (
             ffmpeg.input(filename)
                 .output('pipe:', format='wav', acodec='pcm_s16le', ac=1, ar='16k')
-                .run(quiet=False, overwrite_output=True)  # Set quiet=False to show ffmpeg logs
+                .run(quiet=not show_ffmpeg_output, overwrite_output=True)
         )
         return out
     except ffmpeg.Error as e:
@@ -104,12 +241,12 @@ def convert_inputfile_inmemory(filename):
         raise
 
 # Convert input file to 16 kHz mono
-def convert_inputfile(filename, outfile_wav):
+def convert_inputfile(filename, outfile_wav, show_ffmpeg_output=False):
     try:
         return (
             ffmpeg.input(filename)
                 .output(outfile_wav, acodec='pcm_s16le', ac=1, ar='16k')
-                .run(quiet=False, overwrite_output=True)  # Set quiet=False to show ffmpeg logs
+                .run(quiet=not show_ffmpeg_output, overwrite_output=True)
         )
     except ffmpeg.Error as e:
         print("FFmpeg error occurred:")
@@ -218,10 +355,10 @@ def linear_interpolate_pos(input_list_in):
 # Using the model in 'speech2text', transcribe the path in 'media_path'
 # quiet mode: don't output partial transcriptions
 # progress mode: output transcription progress
-def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4):
+def recognize_file(speech2text, media_path, output_file='', quiet=True, progress=True, num_processes=4, chunk_length=8192, decoder_impl='espnet', show_ffmpeg_output=False):
     ensure_dir('.tmp/')
     wavfile_path = '.tmp/' + hashlib.sha1(media_path.encode("utf-8")).hexdigest() + '.wav'
-    convert_inputfile(media_path, wavfile_path)
+    convert_inputfile(media_path, wavfile_path, show_ffmpeg_output)
 
     with wave.open(wavfile_path, 'rb') as wavfile_in:
         ch = wavfile_in.getnchannels()
@@ -231,8 +368,13 @@ def recognize_file(speech2text, media_path, output_file='', quiet=True, progress
         buf = wavfile_in.readframes(-1)
         raw_speech_data = np.frombuffer(buf, dtype='int16')
 
-    chunk_length = 8192
-    complete_text, auxiliary_info = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet)
+    # chunk_length: Number of raw audio samples per chunk
+    # For streaming transformer with block_size=40, hop_size=16, look_ahead=16:
+    # - First block needs: (40 - 16) = 24 encoder frames
+    # - 24 encoder frames × 4 (subsampling) × 160 (STFT hop) = 15,360 samples minimum
+    # - Full block: 40 × 4 × 160 = 25,600 samples (1.6s at 16kHz)
+    # Using passed chunk_length parameter (default 8192, configurable via --chunk-length)
+    complete_text, auxiliary_info = recognize(speech2text, raw_speech_data, rate, chunk_length, num_processes, progress, quiet, decoder_impl=decoder_impl)
 
     # Automatically generate output .txt name from media_path if it isnt set
     # media_path can also be an URL, in that case it needs special handling
@@ -269,9 +411,14 @@ def process_tasks_serially(tasks):
 # Recgonize the speech in 'raw_speech_data' with sampling rate 'rate' using the model in 'speech2text'.
 # The rawspeech data should be a numpy array of dtype='int16'
 
-def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_processes=1, progress=True, quiet=False, status=None):
-    # 32767 is the upper limit of 16-bit binary numbers and is used for the normalization of int to float.
-    speech = raw_speech_data.astype(np.float16) / 32767.0
+def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_processes=1, progress=True, quiet=False, status=None, decoder_impl='espnet'):
+    # Normalize int16 audio to [-1, 1] range
+    # Use float16 for ESPnet decoder (original behavior), float32 for native decoder (more precision)
+    # int16 range is [-32768, 32767], use 32767.0 to match original ESPnet behavior
+    if decoder_impl == 'espnet':
+        speech = raw_speech_data.astype(np.float16) / 32767.0  # ESPnet uses float16
+    else:
+        speech = raw_speech_data.astype(np.float32) / 32768.0  # Native decoder uses float32
 
     speech_len = len(speech)
     speech_len_frames = (speech_len / rate) * 100.
@@ -326,19 +473,19 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
 
     if num_processes == 1:
         # If num_processes is 1, run tasks serially
-        init_pool_processes(q, speech2text, speech)
+        init_pool_processes(q, speech2text, speech, decoder_impl)
         start_end_positions = zip(segments_i[:-1], segments_i[1:])
         tasks = [lambda start=start, end=end: recognize_segment(speech_len, start, end, chunk_length,
-                                                           progress, rate, quiet) for start, end in start_end_positions]
+                                                           progress, rate, quiet, max_i) for start, end in start_end_positions]
         paragraphs_raw = process_tasks_serially(tasks)
     else: #parallel execution with concurrent.futures and ProcessPoolExecutor
         with ProcessPoolExecutor(max_workers=num_processes, initializer=init_pool_processes,
-                                 initargs=(q, speech2text, speech)) as executor:
+                                 initargs=(q, speech2text, speech, decoder_impl)) as executor:
 
             start_end_positions = zip(segments_i[:-1], segments_i[1:])
             for start, end in start_end_positions:
                 data_future = executor.submit(recognize_segment, speech_len, start, end, chunk_length,
-                                              progress, rate, quiet)
+                                              progress, rate, quiet, max_i)
                 futures.append(data_future)
 
                 seg_num += 1
@@ -424,7 +571,7 @@ def recognize(speech2text, raw_speech_data, rate, chunk_length=8192, num_process
 
 
 # Transcribe a segment of speech, defined by start and end points
-def recognize_segment(speech_len, start, end, chunk_length, progress, rate, quiet):
+def recognize_segment(speech_len, start, end, chunk_length, progress, rate, quiet, max_i):
     segment_text = ''
     prev_lines = 0
 
@@ -438,14 +585,15 @@ def recognize_segment(speech_len, start, end, chunk_length, progress, rate, quie
 
         segment_text, prev_lines = batch_recognize_inner_loop(speech_chunk, i, prev_lines,
                                                               progress, quiet, rate, chunk_length,
-                                                              is_final=(i == end))
+                                                              is_final=(i == end),
+                                                              finalize_all=(i == max_i))
         if progress:
             pbar_queue.put(1, block=False)
     return segment_text
 
 # This advances the recognition by one step
 def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rate,
-                               chunk_length, is_final, debug_pos=False):
+                               chunk_length, is_final, finalize_all=False, debug_pos=False):
 
     if is_final and debug_pos:
        # first calculate in seconds, then multiply with 100 to get the framepos (100 frames in one second.)
@@ -459,23 +607,29 @@ def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rat
 
     # avoid sending very short chunks through speech2text_global
     if chunk_length > 10:
-        results = speech2text_global(speech=speech_chunk, is_final=is_final, always_assemble_hyps= not (quiet or progress))
-        
+        # Only pass finalize_all for native decoder (ESPnet streaming decoder doesn't support it)
+        if decoder_impl_global == 'native':
+            results = speech2text_global(speech=speech_chunk, is_final=is_final, finalize_all=finalize_all, always_assemble_hyps= not (quiet or progress))
+        else:
+            results = speech2text_global(speech=speech_chunk, is_final=is_final, always_assemble_hyps= not (quiet or progress))
+
+        # Reset beam state after finalizing a segment (only for native decoder)
+        # The ESPnet decoder doesn't benefit from this and it adds overhead
+        if is_final and decoder_impl_global == 'native':
+            speech2text_global.reset()
+
         if quiet or progress:
             if is_final:
-                #nbests = [text for text, token, token_int, hyp in results]
-                
                 utterance_text = results[0][0] if results is not None and len(results) > 0 else ""
                 utterance_token = results[0][1] if results is not None and len(results) > 0 else []
                 utterance_pos = results[0][-2] if results is not None and len(results) > 0 else []
                 utterance_hyp = results[0][-3] if results is not None and len(results) > 0 else {}
         else:
             if results is not None and len(results) > 0:
-                #nbests = [text, tokenpos for text, token, token_int, token_pos, hyp in results]
-                utterance_text = results[0][0] #nbests[0] if nbests is not None and len(nbests) > 0 else ""
+                utterance_text = results[0][0]
                 utterance_token = results[0][1]
                 utterance_pos = results[0][-2]
-                utterance_hyp = results[0][-3]            
+                utterance_hyp = results[0][-3]
 
                 prev_lines = progress_output(results[0][0], prev_lines)
             else:
@@ -587,7 +741,8 @@ def recognize_microphone(speech2text, tag, record_max_seconds=120, channels=1, r
                 sys.stdout.write('\n')
                 prev_lines = 0
 
-        nbests = [text for text, token, token_int, hyp in results]
+        # New API returns (text, tokens, token_ids) - extract text
+        nbests = [result[0] for result in results]
         prev_lines = progress_output(nbests[0], prev_lines)
 
     # Write debug wav as output file (will only be executed after shutdown)
@@ -606,13 +761,21 @@ def main():
     parser.add_argument('-t', '--max-record-time', dest='max_record_time',
                         help='Maximum record time in seconds (live transcription).', type=float, default=120)
     parser.add_argument('-m', '--model', dest='model', default='de_streaming_transformer_xl',
-                        help='Choose a model: de_streaming_transformer_m, de_streaming_transformer_l or de_streaming_transformer_xl', type=str)
+                        help='Choose a model. German: de_streaming_transformer_{m,l,xl}. Spanish: es_streaming_transformer_{m,l}. '
+                             'English: en_streaming_transformer_{m,l}. Or provide a HuggingFace model ID or URL.', type=str)
     parser.add_argument('-d', '--device', dest='device', default='cpu',
                         help="Computation device. Either 'cpu' or 'cuda'."
                              " Note: Mac M1 / mps support isn't available yet.")
     parser.add_argument('--lang', dest='language', default='',
                         help='Explicitly set language, default is empty = deduct language from model tag', type=str)
     parser.add_argument('-b', '--beamsize', dest='beamsize', help='Beam size for the decoder', type=int, default=5)
+    parser.add_argument('--decoder', dest='decoder', choices=['native', 'espnet'], default='espnet',
+                        help='Decoder implementation: "espnet" (default) or "native" (experimental)')
+    parser.add_argument('--fp16', dest='fp16', action='store_true',
+                        help='Use FP16 (half precision) for faster inference. Only supported with native decoder.')
+    parser.add_argument('--disable-bbd', dest='disable_bbd', action='store_true',
+                        help='Disable Block Boundary Detection (BBD). Only applies to native decoder. '
+                             'BBD prevents repetition but may cause early stopping with subword tokenization (default: enabled to match ESPnet).')
     parser.add_argument('--quiet', dest='quiet', help='No partial transcription output when transcribing a media file',
                         action='store_true')
     parser.add_argument('--no-progress', dest='no_progress', help='Show no progress bar when transcribing a media file',
@@ -630,9 +793,22 @@ def main():
                              ' (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() '
                              'divided by two.',
                         type=int)
+    parser.add_argument('--chunk-length', dest='chunk_length', default=8192,
+                        help='Number of raw audio samples per chunk for streaming processing (default: 8192)',
+                        type=int)
+    parser.add_argument('--log-level', dest='log_level', default='ERROR',
+                        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR', 'CRITICAL'],
+                        help='Set logging level (default: ERROR). Use WARNING to see ESPnet N-best warnings.',
+                        type=str)
+    parser.add_argument('--show-ffmpeg-output', dest='show_ffmpeg_output',
+                        help='Show ffmpeg command output (default: suppressed for cleaner output)',
+                        action='store_true')
     parser.add_argument('inputfile', nargs='?', help='Input media file', default='')
 
     args = parser.parse_args()
+
+    # Configure logging level based on user preference
+    logging.basicConfig(level=getattr(logging, args.log_level))
 
     if args.num_threads != -1:
         torch.set_num_threads(args.num_threads)
@@ -665,7 +841,7 @@ def main():
     quiet = args.quiet or num_processes > 1
     progress = not args.no_progress
 
-    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress, cache_dir=args.cache_dir)
+    speech2text = load_model(tag=tag, device=args.device, beam_size=args.beamsize, quiet=quiet or progress, cache_dir=args.cache_dir, decoder_impl=args.decoder, fp16=args.fp16, use_bbd=not args.disable_bbd)
 
     args = parser.parse_args()
 
@@ -678,7 +854,7 @@ def main():
         if not (args.inputfile.startswith('http://') or args.inputfile.startswith('https://')) and not os.path.isfile(args.inputfile):
             print(f"Error: Input file '{args.inputfile}' does not exist or is not a valid file.")
             sys.exit(-1)
-        recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes)
+        recognize_file(speech2text, args.inputfile, quiet=quiet, progress=progress, num_processes=num_processes, chunk_length=args.chunk_length, decoder_impl=args.decoder, show_ffmpeg_output=args.show_ffmpeg_output)
     else:
         parser.print_help()
 

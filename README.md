@@ -2,11 +2,13 @@
 
 This is a Python utility to interface [Speechcatcher EspNet2 models](https://huggingface.co/speechcatcher). You can transcribe media files and use the utility for live transcription. All models are trained end-to-end with punctuation - the ASR model is able to output full text directly, without the need for punctuation reconstruction. Speechcatcher runs fast on CPUs and does not need a GPU to transcribe your audio.
 
-The current focus is on German ASR. But more models will follow - stay tuned!
+Speechcatcher supports German, English, and Spanish ASR. More models and languages will follow - stay tuned!
 
 ![Speechcatcher live recognition example](https://github.com/speechcatcher-asr/speechcatcher/raw/main/speechcatcher_de_live.gif)
 
 ## News
+
+* 10/12/2025. New in version 0.5.0: English and Spanish model support! Use `-m en_streaming_transformer_l` for English or `-m es_streaming_transformer_l` for Spanish. New experimental native decoder implementation with `--decoder native`. Configurable logging with `--log-level`. Thanks to [Wordcab Inc.](https://wordcab.com) sponsorship for making this release possible!
 
 * 8/21/2025. New in version 0.4.2: Python3.13 compatibilty, made speechcatcher-server compatible with the new websockets>=14 API (see also https://websockets.readthedocs.io/en/stable/howto/upgrade.html).
 
@@ -108,15 +110,29 @@ To use speechcatcher in your Python script, you need to import the speechcatcher
 
 ## Available models
 
+### German models
+
 | Acoustic model | Training data (hours) | Tuda-raw test WER (without LM) | CER |
 | --- | --- | --- | --- |
 | [de_streaming_transformer_m](https://huggingface.co/speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_m_raw_de_bpe1024) | 13k | 11.57 | 3.38 |
 | [de_streaming_transformer_l](https://huggingface.co/speechcatcher/speechcatcher_german_espnet_streaming_transformer_13k_train_size_l_raw_de_bpe1024) | 13k | 9.65 | 2.76 |
-| [de_streaming_transformer_xl](https://huggingface.co/speechcatcher/speechcatcher_german_espnet_streaming_transformer_26k_train_size_xl_raw_de_bpe1024) | 26k | 8.5 | 2.44 | 
-| --- | --- | --- | --- |
-| [whisper large](https://huggingface.co/openai/whisper-large-v2) | ? | coming | soon! | 
+| [de_streaming_transformer_xl](https://huggingface.co/speechcatcher/speechcatcher_german_espnet_streaming_transformer_26k_train_size_xl_raw_de_bpe1024) | 26k | 8.5 | 2.44 |
 
 Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances without the normalization step. It may not be directly comparable to regular tuda-de results.
+
+### English models
+
+| Acoustic model | Training data (hours) | Test WER | CER |
+| --- | --- | --- | --- |
+| [en_streaming_transformer_m](https://huggingface.co/speechcatcher/wordcab_speechcatcher_english_espnet_streaming_transformer_35k_train_size_m_raw_en_bpe1024) | 35k | TBD | TBD |
+| [en_streaming_transformer_l](https://huggingface.co/speechcatcher/wordcab_speechcatcher_english_espnet_streaming_transformer_35k_train_size_l_raw_en_bpe1024) | 35k | TBD | TBD |
+
+### Spanish models
+
+| Acoustic model | Training data (hours) | Test WER | CER |
+| --- | --- | --- | --- |
+| [es_streaming_transformer_m](https://huggingface.co/speechcatcher/wordcab_speechcatcher_spanish_espnet_streaming_transformer_35k_train_size_m_raw_es_bpe1024) | 35k | TBD | TBD |
+| [es_streaming_transformer_l](https://huggingface.co/speechcatcher/wordcab_speechcatcher_spanish_espnet_streaming_transformer_35k_train_size_l_raw_es_bpe1024) | 35k | TBD | TBD |
 
 ## Speechcatcher CLI parameters
 
@@ -132,12 +148,19 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
       -t MAX_RECORD_TIME, --max-record-time MAX_RECORD_TIME
                             Maximum record time in seconds (live transcription).
       -m MODEL, --model MODEL
-                            Choose a model: de_streaming_transformer_m, de_streaming_transformer_l or de_streaming_transformer_xl
+                            Choose a model. German: de_streaming_transformer_{m,l,xl}. Spanish: es_streaming_transformer_{m,l}.
+                            English: en_streaming_transformer_{m,l}. Or provide a HuggingFace model ID or URL.
       -d DEVICE, --device DEVICE
                             Computation device. Either 'cpu' or 'cuda'. Note: Mac M1 / mps support isn't available yet.
       --lang LANGUAGE       Explicitly set language, default is empty = deduct language from model tag
       -b BEAMSIZE, --beamsize BEAMSIZE
                             Beam size for the decoder
+      --decoder {native,espnet}
+                            Decoder implementation: "espnet" (default) or "native" (experimental)
+      --fp16                Use FP16 (half precision) for faster inference. Only supported with native decoder.
+      --disable-bbd         Disable Block Boundary Detection (BBD). Only applies to native decoder.
+                            BBD prevents repetition but may cause early stopping with subword tokenization
+                            (default: enabled to match ESPnet).
       --quiet               No partial transcription output when transcribing a media file
       --no-progress         Show no progress bar when transcribing a media file
       --no-exception-on-overflow
@@ -145,13 +168,17 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
       --save-debug-wav      Save recording to debug.wav, only applicable to live decoding
       --num-threads NUM_THREADS
                             Set number of threads used for intraop parallelism on CPU in pytorch.
+      --cache-dir CACHE_DIR
+                            Directory where model downloads are cached.
       -n NUM_PROCESSES, --num-processes NUM_PROCESSES
-                            Set number of processes used for processing long audio files in parallel (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() divided by two.
+                            Set number of processes used for processing long audio files in parallel
+                            (the input file needs to be long enough). If set to -1, use multiprocessing.cpu_count() divided by two.
+      --chunk-length CHUNK_LENGTH
+                            Number of raw audio samples per chunk for streaming processing (default: 8192)
+      --log-level {DEBUG,INFO,WARNING,ERROR,CRITICAL}
+                            Set logging level (default: ERROR). Use WARNING to see ESPnet N-best warnings.
 
 ## Speechcatcher websocket parameters
-
-    usage: speechcatcher_server [-h] [--host HOST] [--port PORT] [--model {de_streaming_transformer_m,de_streaming_transformer_l,de_streaming_transformer_xl}] [--device {cpu,cuda}] [--beamsize BEAMSIZE]
-                                [--cache-dir CACHE_DIR] [--format {wav,mp3,mp4,s16le,webm,ogg,acc}] [--pool-size POOL_SIZE] [--vosk-output-format]
 
     Speechcatcher WebSocket Server for streaming ASR
 
@@ -159,8 +186,9 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
       -h, --help            show this help message and exit
       --host HOST           Host for the WebSocket server
       --port PORT           Port for the WebSocket server
-      --model {de_streaming_transformer_m,de_streaming_transformer_l,de_streaming_transformer_xl}
-                            Model to use for ASR
+      --model {de_streaming_transformer_m,de_streaming_transformer_l,de_streaming_transformer_xl,es_streaming_transformer_m,es_streaming_transformer_l,en_streaming_transformer_m,en_streaming_transformer_l}
+                            Model to use for ASR. German: de_streaming_transformer_{m,l,xl}.
+                            Spanish: es_streaming_transformer_{m,l}. English: en_streaming_transformer_{m,l}.
       --device {cpu,cuda}   Device to run the ASR model on ('cpu' or 'cuda')
       --beamsize BEAMSIZE   Beam size for the decoder
       --cache-dir CACHE_DIR
@@ -170,6 +198,10 @@ Note: Tuda-de-raw results are based on raw lowercased tuda-de test utterances wi
       --pool-size POOL_SIZE
                             Number of speech2text instances to preload
       --vosk-output-format  Enable Vosk-like output format
+      --finalize-update-iters FINALIZE_UPDATE_ITERS
+                            Number of iterations with no new update from the ASR util an utterance is finalized.
+      --max_partial_iters MAX_PARTIAL_ITERS
+                            Maximum number of iterations until utterance finalization is forced.
 
 ## Speechcatcher training
 
@@ -194,10 +226,17 @@ If you use speechcatcher models in your research, for now just cite this reposit
 
 ## Sponsors
 
-Speechcatcher is gracefully funded by
+Speechcatcher was gracefully funded by
 
 <a href="https://media-tech-lab.com">Media Tech Lab by Media Lab Bayern</a> (<a href="https://github.com/media-tech-lab">@media-tech-lab</a>)
 
 <a href="https://media-tech-lab.com">
     <img src="https://raw.githubusercontent.com/media-tech-lab/.github/main/assets/mtl-powered-by.png" width="240" title="Media Tech Lab powered by logo">
+</a>
+
+
+<a href="https://wordcab.com">Wordcab Inc.</a> (<a href="https://github.com/info-wordcab">@info-wordcab</a>)
+
+<a href="https://wordcab.com">
+    <img src="https://raw.githubusercontent.com/speechcatcher-asr/.github/refs/heads/main/wordcab_logo.webp" width="160" title="Wordcab logo">
 </a>
