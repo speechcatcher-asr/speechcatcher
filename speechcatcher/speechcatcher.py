@@ -109,12 +109,14 @@ def show_model_info(tag, quiet=False):
             print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
             print()
         elif tag.startswith('en_'):
-            print("\nRecommended models for other languages (largest):")
+            print("\nYou selected: English language model")
+            print("\nTo use other languages, run:")
             print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
             print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
             print()
         elif tag.startswith('es_'):
-            print("\nRecommended models for other languages (largest):")
+            print("\nYou selected: Spanish language model")
+            print("\nTo use other languages, run:")
             print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
             print("  English:  speechcatcher -m en_streaming_transformer_l <audio_file>")
             print()
@@ -604,7 +606,11 @@ def batch_recognize_inner_loop(speech_chunk, i, prev_lines, progress, quiet, rat
 
     # avoid sending very short chunks through speech2text_global
     if chunk_length > 10:
-        results = speech2text_global(speech=speech_chunk, is_final=is_final, finalize_all=finalize_all, always_assemble_hyps= not (quiet or progress))
+        # Only pass finalize_all for native decoder (ESPnet streaming decoder doesn't support it)
+        if decoder_impl_global == 'native':
+            results = speech2text_global(speech=speech_chunk, is_final=is_final, finalize_all=finalize_all, always_assemble_hyps= not (quiet or progress))
+        else:
+            results = speech2text_global(speech=speech_chunk, is_final=is_final, always_assemble_hyps= not (quiet or progress))
 
         # Reset beam state after finalizing a segment (only for native decoder)
         # The ESPnet decoder doesn't benefit from this and it adds overhead
