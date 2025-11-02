@@ -86,11 +86,14 @@ def show_model_info(tag, quiet=False):
 
     language = None
     size = None
-    # Check for language code at the beginning of the tag (e.g., "de_", "en_", "es_")
-    for lang_code in ['de', 'en', 'es']:
-        if tag.startswith(lang_code + '_'):
-            language = language_names[lang_code]
-            break
+    # Check for language code anywhere in the tag (works with both short tags and full HuggingFace paths)
+    # For short tags like "en_streaming_transformer_l", or full paths with "_english_" and "_en_"
+    if '_english_' in tag or '_en_bpe' in tag or tag.startswith('en_'):
+        language = language_names['en']
+    elif '_spanish_' in tag or '_es_bpe' in tag or tag.startswith('es_'):
+        language = language_names['es']
+    elif '_german_' in tag or '_de_bpe' in tag or tag.startswith('de_'):
+        language = language_names['de']
 
     for size_code in ['_xl', '_l', '_m']:
         if size_code in tag:
@@ -101,18 +104,18 @@ def show_model_info(tag, quiet=False):
         print(f"\nUsing model: {language} ({size})")
 
         # Recommend largest models for other languages
-        if tag.startswith('de_'):
+        if '_german_' in tag or '_de_bpe' in tag or tag.startswith('de_'):
             print("\nRecommended models for other languages (largest):")
             print("  English:  speechcatcher -m en_streaming_transformer_l <audio_file>")
             print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
             print()
-        elif tag.startswith('en_'):
+        elif '_english_' in tag or '_en_bpe' in tag or tag.startswith('en_'):
             print("\nYou selected: English language model")
             print("\nTo use other languages, run:")
             print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
             print("  Spanish:  speechcatcher -m es_streaming_transformer_l <audio_file>")
             print()
-        elif tag.startswith('es_'):
+        elif '_spanish_' in tag or '_es_bpe' in tag or tag.startswith('es_'):
             print("\nYou selected: Spanish language model")
             print("\nTo use other languages, run:")
             print("  German:   speechcatcher -m de_streaming_transformer_xl <audio_file>")
